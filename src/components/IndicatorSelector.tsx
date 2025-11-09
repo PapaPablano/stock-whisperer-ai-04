@@ -24,6 +24,7 @@ export interface IndicatorConfig {
   rsi?: boolean;
   macd?: boolean;
   stochastic?: boolean;
+  kdj?: boolean;
   
   // Volatility Indicators
   bollingerBands?: boolean;
@@ -66,7 +67,8 @@ export function IndicatorSelector({ selectedIndicators, onChange }: IndicatorSel
   const momentumIndicators: { key: keyof IndicatorConfig; label: string; description: string }[] = [
     { key: 'rsi', label: 'RSI (14)', description: 'Relative Strength Index' },
     { key: 'macd', label: 'MACD', description: 'Moving Average Convergence Divergence' },
-    { key: 'stochastic', label: 'Stochastic', description: 'Stochastic Oscillator' },
+    { key: 'stochastic', label: 'Stochastic', description: 'Stochastic Oscillator (K, D)' },
+    { key: 'kdj', label: 'KDJ (9)', description: 'Stochastic with J line (more sensitive)' },
   ];
 
   const volatilityIndicators: { key: keyof IndicatorConfig; label: string; description: string }[] = [

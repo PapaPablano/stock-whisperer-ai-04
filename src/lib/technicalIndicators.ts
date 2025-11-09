@@ -141,7 +141,7 @@ export function calculateMACD(
 }
 
 /**
- * Stochastic Oscillator
+ * Stochastic Oscillator (Basic)
  */
 export function calculateStochastic(
   prices: PriceData[],
@@ -162,7 +162,8 @@ export function calculateStochastic(
       const low = Math.min(...period.map(p => p.low));
       const close = prices[i].close;
       
-      const k = ((close - low) / (high - low)) * 100;
+      const range = high - low;
+      const k = range === 0 ? 50 : ((close - low) / range) * 100;
       kValues.push(k);
     }
   }
@@ -183,6 +184,96 @@ export function calculateStochastic(
   }
   
   return { k: kValues, d: dValues };
+}
+
+/**
+ * KDJ Indicator (Stochastic with J line)
+ * 
+ * KDJ is an extension of the Stochastic Oscillator that adds a J line
+ * which is more sensitive to price changes. J = 3*K - 2*D
+ * 
+ * Formula:
+ *   RSV = (Close - Lowest Low) / (Highest High - Lowest Low) * 100
+ *   K = SMA(RSV, k_smooth)
+ *   D = SMA(K, d_smooth)
+ *   J = 3*K - 2*D
+ * 
+ * The J line is particularly useful for identifying early reversals.
+ */
+export function calculateKDJ(
+  prices: PriceData[],
+  period: number = 9,
+  kSmooth: number = 3,
+  dSmooth: number = 3
+): {
+  k: (number | null)[];
+  d: (number | null)[];
+  j: (number | null)[];
+  jMinusD: (number | null)[];
+} {
+  // Calculate RSV (Raw Stochastic Value)
+  const rsvValues: (number | null)[] = [];
+  
+  for (let i = 0; i < prices.length; i++) {
+    if (i < period - 1) {
+      rsvValues.push(null);
+    } else {
+      const periodData = prices.slice(i - period + 1, i + 1);
+      const highestHigh = Math.max(...periodData.map(p => p.high));
+      const lowestLow = Math.min(...periodData.map(p => p.low));
+      const close = prices[i].close;
+      
+      const range = highestHigh - lowestLow;
+      const rsv = range === 0 ? 50 : ((close - lowestLow) / range) * 100;
+      rsvValues.push(rsv);
+    }
+  }
+  
+  // Calculate K line (SMA of RSV)
+  const rsvFiltered = rsvValues.filter(v => v !== null) as number[];
+  const kSMA = calculateSMA(rsvFiltered, kSmooth);
+  
+  const kValues: (number | null)[] = [];
+  let kIndex = 0;
+  
+  for (let i = 0; i < rsvValues.length; i++) {
+    if (rsvValues[i] === null) {
+      kValues.push(null);
+    } else {
+      kValues.push(kSMA[kIndex] || null);
+      kIndex++;
+    }
+  }
+  
+  // Calculate D line (SMA of K)
+  const kFiltered = kValues.filter(v => v !== null) as number[];
+  const dSMA = calculateSMA(kFiltered, dSmooth);
+  
+  const dValues: (number | null)[] = [];
+  let dIndex = 0;
+  
+  for (let i = 0; i < kValues.length; i++) {
+    if (kValues[i] === null) {
+      dValues.push(null);
+    } else {
+      dValues.push(dSMA[dIndex] || null);
+      dIndex++;
+    }
+  }
+  
+  // Calculate J line (3*K - 2*D)
+  const jValues: (number | null)[] = kValues.map((k, i) => {
+    const d = dValues[i];
+    return (k !== null && d !== null) ? (3 * k - 2 * d) : null;
+  });
+  
+  // Calculate J - D divergence
+  const jMinusD: (number | null)[] = jValues.map((j, i) => {
+    const d = dValues[i];
+    return (j !== null && d !== null) ? (j - d) : null;
+  });
+  
+  return { k: kValues, d: dValues, j: jValues, jMinusD };
 }
 
 // ============================================

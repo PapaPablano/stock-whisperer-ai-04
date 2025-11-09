@@ -1,11 +1,11 @@
 import { useState, useMemo } from 'react';
 import { IndicatorSelector, type IndicatorConfig } from './IndicatorSelector';
-import { EnhancedPriceChart } from './EnhancedPriceChart';
-import { RSIChart, MACDChart, StochasticChart, VolumeIndicatorChart } from './IndicatorCharts';
+import { RSIChart, MACDChart, StochasticChart, KDJChart, VolumeIndicatorChart } from './IndicatorCharts';
 import {
   calculateRSI,
   calculateMACD,
   calculateStochastic,
+  calculateKDJ,
   calculateOBV,
   calculateVROC,
   calculateMFI,
@@ -30,6 +30,7 @@ export function TechnicalAnalysisDashboard({ symbol, data }: TechnicalAnalysisDa
     rsi: true,
     macd: true,
     stochastic: false,
+    kdj: false,
     bollingerBands: false,
     atr: false,
     keltnerChannel: false,
@@ -41,6 +42,20 @@ export function TechnicalAnalysisDashboard({ symbol, data }: TechnicalAnalysisDa
 
   // Calculate indicators based on selection
   const indicatorData = useMemo(() => {
+    if (!data || data.length === 0) {
+      return {
+        rsi: [],
+        macd: [],
+        stochastic: [],
+        kdj: [],
+        obv: [],
+        vroc: [],
+        mfi: [],
+        atr: [],
+        adx: [],
+      };
+    }
+
     const closes = data.map(d => d.close);
     const volumes = data.map(d => d.volume);
     
@@ -55,6 +70,11 @@ export function TechnicalAnalysisDashboard({ symbol, data }: TechnicalAnalysisDa
       ? calculateStochastic(data, 14, 3)
       : null;
     
+    // KDJ
+    const kdj = selectedIndicators.kdj
+      ? calculateKDJ(data, 9, 3, 3)
+      : null;
+    
     // Volume indicators
     const obv = selectedIndicators.obv ? calculateOBV(data) : [];
     const vroc = selectedIndicators.vroc ? calculateVROC(volumes, 14) : [];
@@ -64,14 +84,20 @@ export function TechnicalAnalysisDashboard({ symbol, data }: TechnicalAnalysisDa
     const atr = selectedIndicators.atr ? calculateATR(data, 14) : [];
     const adx = selectedIndicators.adx ? calculateADX(data, 14) : [];
     
+    // Format dates consistently
+    const formatDate = (dateStr: string) => {
+      const date = new Date(dateStr);
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
+    };
+    
     return {
       rsi: data.map((item, i) => ({
-        date: new Date(item.date).toLocaleDateString(),
+        date: formatDate(item.date),
         rsi: rsi[i] || null,
       })),
       macd: macd
         ? data.map((item, i) => ({
-            date: new Date(item.date).toLocaleDateString(),
+            date: formatDate(item.date),
             macd: macd.macd[i],
             signal: macd.signal[i],
             histogram: macd.histogram[i],
@@ -79,29 +105,37 @@ export function TechnicalAnalysisDashboard({ symbol, data }: TechnicalAnalysisDa
         : [],
       stochastic: stochastic
         ? data.map((item, i) => ({
-            date: new Date(item.date).toLocaleDateString(),
+            date: formatDate(item.date),
             k: stochastic.k[i],
             d: stochastic.d[i],
           }))
         : [],
+      kdj: kdj
+        ? data.map((item, i) => ({
+            date: formatDate(item.date),
+            k: kdj.k[i],
+            d: kdj.d[i],
+            j: kdj.j[i],
+          }))
+        : [],
       obv: data.map((item, i) => ({
-        date: new Date(item.date).toLocaleDateString(),
+        date: formatDate(item.date),
         value: obv[i] || null,
       })),
       vroc: data.map((item, i) => ({
-        date: new Date(item.date).toLocaleDateString(),
+        date: formatDate(item.date),
         value: vroc[i] || null,
       })),
       mfi: data.map((item, i) => ({
-        date: new Date(item.date).toLocaleDateString(),
+        date: formatDate(item.date),
         value: mfi[i] || null,
       })),
       atr: data.map((item, i) => ({
-        date: new Date(item.date).toLocaleDateString(),
+        date: formatDate(item.date),
         value: atr[i] || null,
       })),
       adx: data.map((item, i) => ({
-        date: new Date(item.date).toLocaleDateString(),
+        date: formatDate(item.date),
         value: adx[i] || null,
       })),
     };
@@ -118,17 +152,10 @@ export function TechnicalAnalysisDashboard({ symbol, data }: TechnicalAnalysisDa
           />
         </div>
 
-        {/* Charts */}
+        {/* Indicator Charts */}
         <div className="lg:col-span-3 space-y-6">
-          {/* Main Price Chart with Overlays */}
-          <EnhancedPriceChart
-            symbol={symbol}
-            data={data}
-            indicators={selectedIndicators}
-          />
-
           {/* Momentum Indicators */}
-          {selectedIndicators.rsi && (
+          {selectedIndicators.rsi && indicatorData.rsi.length > 0 && (
             <RSIChart data={indicatorData.rsi} />
           )}
           
@@ -139,9 +166,13 @@ export function TechnicalAnalysisDashboard({ symbol, data }: TechnicalAnalysisDa
           {selectedIndicators.stochastic && indicatorData.stochastic.length > 0 && (
             <StochasticChart data={indicatorData.stochastic} />
           )}
+          
+          {selectedIndicators.kdj && indicatorData.kdj.length > 0 && (
+            <KDJChart data={indicatorData.kdj} />
+          )}
 
           {/* Volume Indicators */}
-          {selectedIndicators.obv && (
+          {selectedIndicators.obv && indicatorData.obv.length > 0 && (
             <VolumeIndicatorChart
               data={indicatorData.obv}
               title="OBV - On-Balance Volume"
@@ -149,7 +180,7 @@ export function TechnicalAnalysisDashboard({ symbol, data }: TechnicalAnalysisDa
             />
           )}
           
-          {selectedIndicators.vroc && (
+          {selectedIndicators.vroc && indicatorData.vroc.length > 0 && (
             <VolumeIndicatorChart
               data={indicatorData.vroc}
               title="VROC (14) - Volume Rate of Change"
@@ -157,7 +188,7 @@ export function TechnicalAnalysisDashboard({ symbol, data }: TechnicalAnalysisDa
             />
           )}
           
-          {selectedIndicators.mfi && (
+          {selectedIndicators.mfi && indicatorData.mfi.length > 0 && (
             <VolumeIndicatorChart
               data={indicatorData.mfi}
               title="MFI (14) - Money Flow Index"
@@ -166,7 +197,7 @@ export function TechnicalAnalysisDashboard({ symbol, data }: TechnicalAnalysisDa
           )}
 
           {/* Volatility Indicators */}
-          {selectedIndicators.atr && (
+          {selectedIndicators.atr && indicatorData.atr.length > 0 && (
             <VolumeIndicatorChart
               data={indicatorData.atr}
               title="ATR (14) - Average True Range"
@@ -174,12 +205,27 @@ export function TechnicalAnalysisDashboard({ symbol, data }: TechnicalAnalysisDa
             />
           )}
           
-          {selectedIndicators.adx && (
+          {selectedIndicators.adx && indicatorData.adx.length > 0 && (
             <VolumeIndicatorChart
               data={indicatorData.adx}
               title="ADX (14) - Average Directional Index"
               color="#3b82f6"
             />
+          )}
+
+          {/* Show message if no indicators selected */}
+          {!selectedIndicators.rsi && 
+           !selectedIndicators.macd && 
+           !selectedIndicators.stochastic && 
+           !selectedIndicators.kdj &&
+           !selectedIndicators.obv && 
+           !selectedIndicators.vroc && 
+           !selectedIndicators.mfi && 
+           !selectedIndicators.atr && 
+           !selectedIndicators.adx && (
+            <div className="text-center py-12 text-muted-foreground">
+              <p className="text-lg">Select indicators from the left to display charts</p>
+            </div>
           )}
         </div>
       </div>

@@ -3,20 +3,65 @@ import { StockCard } from "@/components/StockCard";
 import { MetricCard } from "@/components/MetricCard";
 import { TechnicalIndicator } from "@/components/TechnicalIndicator";
 import { TechnicalAnalysisDashboard } from "@/components/TechnicalAnalysisDashboard";
+import { PriceChart } from "@/components/PriceChart";
 import { VolumeChart } from "@/components/VolumeChart";
-import { featuredStocks, generatePriceData, technicalIndicators, keyMetrics } from "@/lib/mockData";
+import { featuredStocks, technicalIndicators, keyMetrics } from "@/lib/mockData";
 import { TrendingUp, DollarSign, BarChart3, Activity } from "lucide-react";
 import { useStockQuote } from "@/hooks/useStockQuote";
 import { useStockHistorical } from "@/hooks/useStockHistorical";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
+import type { PriceData } from "@/lib/technicalIndicators";
 
 const Index = () => {
   const [selectedSymbol, setSelectedSymbol] = useState("AAPL");
   const { data: liveQuote, isLoading: quoteLoading } = useStockQuote(selectedSymbol);
-  const { data: historicalData, isLoading: historyLoading } = useStockHistorical(selectedSymbol, "1mo");
+  const { data: historicalData, isLoading: historyLoading } = useStockHistorical(selectedSymbol, "3mo");
   
-  const priceData = historicalData || generatePriceData(30);
+  // Convert historical data to the format needed for charts
+  const priceData = useMemo(() => {
+    if (!historicalData || historicalData.length === 0) {
+      // Generate mock data with proper format
+      const mockData: PriceData[] = [];
+      const basePrice = 170;
+      let currentPrice = basePrice;
+      
+      for (let i = 30; i >= 0; i--) {
+        const date = new Date();
+        date.setDate(date.getDate() - i);
+        
+        const change = (Math.random() - 0.5) * 5;
+        currentPrice += change;
+        const high = currentPrice + Math.random() * 3;
+        const low = currentPrice - Math.random() * 3;
+        
+        mockData.push({
+          date: date.toISOString().split('T')[0], // YYYY-MM-DD format
+          open: parseFloat((currentPrice - change).toFixed(2)),
+          high: parseFloat(high.toFixed(2)),
+          low: parseFloat(low.toFixed(2)),
+          close: parseFloat(currentPrice.toFixed(2)),
+          volume: Math.floor(Math.random() * 50000000) + 30000000,
+        });
+      }
+      return mockData;
+    }
+    
+    // Ensure dates are in consistent format
+    return historicalData.map(item => ({
+      ...item,
+      date: typeof item.date === 'string' ? item.date.split('T')[0] : item.date,
+    }));
+  }, [historicalData]);
+
+  // Format data for PriceChart component (simplified format)
+  const simplePriceData = useMemo(() => {
+    return priceData.map(item => ({
+      date: new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      price: item.close,
+      volume: item.volume,
+    }));
+  }, [priceData]);
 
   const handleSymbolSelect = (symbol: string) => {
     setSelectedSymbol(symbol.toUpperCase());
@@ -102,29 +147,18 @@ const Index = () => {
           </div>
         </section>
 
+        {/* Main Price Chart */}
+        <section>
+          <PriceChart symbol={selectedSymbol} data={simplePriceData} />
+        </section>
+
         {/* Technical Analysis Dashboard */}
         <section>
-          <h2 className="text-2xl font-bold mb-4">Technical Analysis</h2>
+          <h2 className="text-2xl font-bold mb-4">Technical Indicators</h2>
           <TechnicalAnalysisDashboard
             symbol={selectedSymbol}
             data={priceData}
           />
-        </section>
-
-        {/* Quick Indicator Summary */}
-        <section>
-          <h3 className="text-lg font-semibold mb-4">Indicator Summary</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {technicalIndicators.map((indicator) => (
-              <TechnicalIndicator key={indicator.name} {...indicator} />
-            ))}
-          </div>
-        </section>
-
-        {/* Volume Analysis */}
-        <section>
-          <h3 className="text-lg font-semibold mb-4">Volume Analysis</h3>
-          <VolumeChart data={priceData} />
         </section>
       </main>
     </div>

@@ -46,26 +46,29 @@ export function EnhancedPriceChart({ symbol, data, indicators }: EnhancedPriceCh
       ? calculateKeltnerChannel(data, 20, 10, 2)
       : null;
     
-    return data.map((item, index) => ({
-      date: new Date(item.date).toLocaleDateString(),
-      close: item.close,
-      ...(indicators.sma20 && { sma20: sma20[index] }),
-      ...(indicators.sma50 && { sma50: sma50[index] }),
-      ...(indicators.sma200 && { sma200: sma200[index] }),
-      ...(indicators.ema12 && { ema12: ema12[index] }),
-      ...(indicators.ema26 && { ema26: ema26[index] }),
-      ...(indicators.ema50 && { ema50: ema50[index] }),
-      ...(bollingerBands && {
-        bbUpper: bollingerBands.upper[index],
-        bbMiddle: bollingerBands.middle[index],
-        bbLower: bollingerBands.lower[index],
-      }),
-      ...(keltnerChannel && {
-        kcUpper: keltnerChannel.upper[index],
-        kcMiddle: keltnerChannel.middle[index],
-        kcLower: keltnerChannel.lower[index],
-      }),
-    }));
+    return data.map((item, index) => {
+      const date = new Date(item.date);
+      return {
+        date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }),
+        close: item.close,
+        ...(indicators.sma20 && { sma20: sma20[index] }),
+        ...(indicators.sma50 && { sma50: sma50[index] }),
+        ...(indicators.sma200 && { sma200: sma200[index] }),
+        ...(indicators.ema12 && { ema12: ema12[index] }),
+        ...(indicators.ema26 && { ema26: ema26[index] }),
+        ...(indicators.ema50 && { ema50: ema50[index] }),
+        ...(bollingerBands && {
+          bbUpper: bollingerBands.upper[index],
+          bbMiddle: bollingerBands.middle[index],
+          bbLower: bollingerBands.lower[index],
+        }),
+        ...(keltnerChannel && {
+          kcUpper: keltnerChannel.upper[index],
+          kcMiddle: keltnerChannel.middle[index],
+          kcLower: keltnerChannel.lower[index],
+        }),
+      };
+    });
   }, [data, indicators]);
 
   const CustomTooltip = ({ active, payload }: any) => {

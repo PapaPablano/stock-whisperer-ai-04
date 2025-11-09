@@ -27,13 +27,15 @@ export function RSIChart({ data }: RSIChartProps) {
         <CardTitle className="text-sm">RSI (14) - Relative Strength Index</CardTitle>
       </CardHeader>
       <CardContent>
-        <ResponsiveContainer width="100%" height={150}>
+        <ResponsiveContainer width="100%" height={200}>
           <ComposedChart data={data}>
             <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
             <XAxis
               dataKey="date"
               tick={{ fill: '#9ca3af', fontSize: 10 }}
-              height={20}
+              height={30}
+              angle={-45}
+              textAnchor="end"
             />
             <YAxis
               domain={[0, 100]}
@@ -103,13 +105,15 @@ export function MACDChart({ data }: MACDChartProps) {
         <CardTitle className="text-sm">MACD - Moving Average Convergence Divergence</CardTitle>
       </CardHeader>
       <CardContent>
-        <ResponsiveContainer width="100%" height={150}>
+        <ResponsiveContainer width="100%" height={200}>
           <ComposedChart data={data}>
             <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
             <XAxis
               dataKey="date"
               tick={{ fill: '#9ca3af', fontSize: 10 }}
-              height={20}
+              height={30}
+              angle={-45}
+              textAnchor="end"
             />
             <YAxis
               tick={{ fill: '#9ca3af', fontSize: 10 }}
@@ -172,13 +176,15 @@ export function StochasticChart({ data }: StochasticChartProps) {
         <CardTitle className="text-sm">Stochastic Oscillator</CardTitle>
       </CardHeader>
       <CardContent>
-        <ResponsiveContainer width="100%" height={150}>
+        <ResponsiveContainer width="100%" height={200}>
           <ComposedChart data={data}>
             <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
             <XAxis
               dataKey="date"
               tick={{ fill: '#9ca3af', fontSize: 10 }}
-              height={20}
+              height={30}
+              angle={-45}
+              textAnchor="end"
             />
             <YAxis
               domain={[0, 100]}
@@ -241,6 +247,102 @@ export function StochasticChart({ data }: StochasticChartProps) {
   );
 }
 
+interface KDJChartProps {
+  data: Array<{
+    date: string;
+    k: number | null;
+    d: number | null;
+    j: number | null;
+  }>;
+}
+
+export function KDJChart({ data }: KDJChartProps) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">KDJ (9) - Stochastic with J Line</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <ResponsiveContainer width="100%" height={200}>
+          <ComposedChart data={data}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
+            <XAxis
+              dataKey="date"
+              tick={{ fill: '#9ca3af', fontSize: 10 }}
+              height={30}
+              angle={-45}
+              textAnchor="end"
+            />
+            <YAxis
+              domain={['dataMin - 10', 'dataMax + 10']}
+              tick={{ fill: '#9ca3af', fontSize: 10 }}
+              width={40}
+            />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: '#1f2937',
+                border: '1px solid #374151',
+                borderRadius: '6px',
+              }}
+            />
+            <Legend wrapperStyle={{ fontSize: 10 }} />
+            
+            {/* Overbought zone (80-100) */}
+            <ReferenceArea
+              y1={80}
+              y2={100}
+              fill="#ef4444"
+              fillOpacity={0.1}
+              label={{ value: 'Overbought', position: 'insideTopRight', fill: '#ef4444', fontSize: 10 }}
+            />
+            
+            {/* Oversold zone (0-20) */}
+            <ReferenceArea
+              y1={0}
+              y2={20}
+              fill="#10b981"
+              fillOpacity={0.1}
+              label={{ value: 'Oversold', position: 'insideBottomRight', fill: '#10b981', fontSize: 10 }}
+            />
+            
+            <ReferenceLine y={80} stroke="#ef4444" strokeDasharray="3 3" />
+            <ReferenceLine y={50} stroke="#6b7280" strokeDasharray="3 3" />
+            <ReferenceLine y={20} stroke="#10b981" strokeDasharray="3 3" />
+            
+            <Line
+              type="monotone"
+              dataKey="k"
+              stroke="#3b82f6"
+              strokeWidth={2}
+              dot={false}
+              name="K Line"
+              connectNulls
+            />
+            <Line
+              type="monotone"
+              dataKey="d"
+              stroke="#f59e0b"
+              strokeWidth={2}
+              dot={false}
+              name="D Line"
+              connectNulls
+            />
+            <Line
+              type="monotone"
+              dataKey="j"
+              stroke="#ec4899"
+              strokeWidth={2}
+              dot={false}
+              name="J Line (Sensitive)"
+              connectNulls
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
+      </CardContent>
+    </Card>
+  );
+}
+
 interface VolumeIndicatorChartProps {
   data: Array<{
     date: string;
@@ -257,13 +359,15 @@ export function VolumeIndicatorChart({ data, title, color = '#3b82f6' }: VolumeI
         <CardTitle className="text-sm">{title}</CardTitle>
       </CardHeader>
       <CardContent>
-        <ResponsiveContainer width="100%" height={120}>
+        <ResponsiveContainer width="100%" height={180}>
           <ComposedChart data={data}>
             <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
             <XAxis
               dataKey="date"
               tick={{ fill: '#9ca3af', fontSize: 10 }}
-              height={20}
+              height={30}
+              angle={-45}
+              textAnchor="end"
             />
             <YAxis
               tick={{ fill: '#9ca3af', fontSize: 10 }}
