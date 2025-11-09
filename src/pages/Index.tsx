@@ -6,9 +6,16 @@ import { MetricCard } from "@/components/MetricCard";
 import { TechnicalIndicator } from "@/components/TechnicalIndicator";
 import { featuredStocks, generatePriceData, technicalIndicators, keyMetrics } from "@/lib/mockData";
 import { TrendingUp, DollarSign, BarChart3, Activity } from "lucide-react";
+import { useStockQuote } from "@/hooks/useStockQuote";
+import { useStockHistorical } from "@/hooks/useStockHistorical";
+import { useState } from "react";
 
 const Index = () => {
-  const priceData = generatePriceData(30);
+  const [selectedSymbol] = useState("AAPL");
+  const { data: liveQuote, isLoading: quoteLoading } = useStockQuote(selectedSymbol);
+  const { data: historicalData, isLoading: historyLoading } = useStockHistorical(selectedSymbol, "1mo");
+  
+  const priceData = historicalData || generatePriceData(30);
 
   return (
     <div className="min-h-screen bg-background">
