@@ -2,28 +2,17 @@ import { Search, TrendingUp } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useState, useEffect } from "react";
 import { useStockSearch } from "@/hooks/useStockSearch";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { Card } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 
 interface HeaderProps {
   onSymbolSelect?: (symbol: string) => void;
 }
 
 export const Header = ({ onSymbolSelect }: HeaderProps) => {
-  const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [showResults, setShowResults] = useState(false);
   
   const { data: searchResults, isLoading } = useStockSearch(debouncedQuery);
 
@@ -38,8 +27,16 @@ export const Header = ({ onSymbolSelect }: HeaderProps) => {
 
   const handleSelect = (symbol: string) => {
     setSearchQuery(symbol);
-    setOpen(false);
+    setShowResults(false);
     onSymbolSelect?.(symbol);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && searchQuery) {
+      const upperSymbol = searchQuery.toUpperCase();
+      setShowResults(false);
+      onSymbolSelect?.(upperSymbol);
+    }
   };
 
   return (
@@ -50,59 +47,63 @@ export const Header = ({ onSymbolSelect }: HeaderProps) => {
           <h1 className="text-xl font-bold text-foreground">StockML Analytics</h1>
         </div>
         
-        <div className="flex-1 max-w-md">
-          <Popover open={open} onOpenChange={setOpen}>
-            <PopoverTrigger asChild>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
-                <Input 
-                  placeholder="Search stocks (e.g., AAPL, TSLA)..." 
-                  className="pl-9"
-                  value={searchQuery}
-                  onChange={(e) => {
-                    setSearchQuery(e.target.value);
-                    setOpen(true);
-                  }}
-                  onFocus={() => searchQuery && setOpen(true)}
-                />
-              </div>
-            </PopoverTrigger>
-            <PopoverContent className="w-[400px] p-0" align="start">
-              <Command>
-                <CommandList>
-                  {isLoading && (
-                    <div className="py-6 text-center text-sm text-muted-foreground">
-                      Searching...
+        <div className="flex-1 max-w-md relative">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
+            <Input 
+              placeholder="Search stocks (e.g., AAPL, TSLA)..." 
+              className="pl-9"
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setShowResults(true);
+              }}
+              onKeyDown={handleKeyDown}
+              onFocus={() => searchQuery && setShowResults(true)}
+              onBlur={() => setTimeout(() => setShowResults(false), 200)}
+            />
+          </div>
+          
+          {/* Search Results Dropdown */}
+          {showResults && searchQuery && (
+            <Card className="absolute top-full mt-2 w-full max-h-96 overflow-auto shadow-lg z-50">
+              {isLoading && (
+                <div className="py-6 text-center text-sm text-muted-foreground">
+                  Searching...
+                </div>
+              )}
+              {!isLoading && searchResults && searchResults.length === 0 && (
+                <div className="py-6 text-center text-sm text-muted-foreground">
+                  No stocks found. Try searching for another symbol.
+                </div>
+              )}
+              {!isLoading && searchResults && searchResults.length > 0 && (
+                <div className="p-2">
+                  <div className="text-xs font-medium text-muted-foreground px-2 py-1">
+                    Search Results
+                  </div>
+                  {searchResults.map((result) => (
+                    <div
+                      key={result.symbol}
+                      onClick={() => handleSelect(result.symbol)}
+                      className={cn(
+                        "flex items-center justify-between p-3 rounded-md cursor-pointer",
+                        "hover:bg-accent transition-colors"
+                      )}
+                    >
+                      <div>
+                        <div className="font-semibold">{result.symbol}</div>
+                        <div className="text-xs text-muted-foreground">{result.name}</div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {result.exchange}
+                      </div>
                     </div>
-                  )}
-                  {!isLoading && searchResults && searchResults.length === 0 && (
-                    <CommandEmpty>No stocks found.</CommandEmpty>
-                  )}
-                  {!isLoading && searchResults && searchResults.length > 0 && (
-                    <CommandGroup heading="Search Results">
-                      {searchResults.map((result) => (
-                        <CommandItem
-                          key={result.symbol}
-                          onSelect={() => handleSelect(result.symbol)}
-                          className="cursor-pointer"
-                        >
-                          <div className="flex items-center justify-between w-full">
-                            <div>
-                              <div className="font-semibold">{result.symbol}</div>
-                              <div className="text-xs text-muted-foreground">{result.name}</div>
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {result.exchange}
-                            </div>
-                          </div>
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  )}
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
+                  ))}
+                </div>
+              )}
+            </Card>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
