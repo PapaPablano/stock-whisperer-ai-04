@@ -132,6 +132,33 @@ export async function removeFromWatchlist(itemId: string) {
   if (error) throw error;
 }
 
+/**
+ * Delete a watchlist
+ */
+export async function deleteWatchlist(watchlistId: string) {
+  const { error } = await supabase
+    .from('watchlists')
+    .delete()
+    .eq('id', watchlistId);
+  
+  if (error) throw error;
+}
+
+/**
+ * Update a watchlist
+ */
+export async function updateWatchlist(watchlistId: string, updates: { name?: string; description?: string }) {
+  const { data, error } = await supabase
+    .from('watchlists')
+    .update(updates)
+    .eq('id', watchlistId)
+    .select()
+    .single();
+  
+  if (error) throw error;
+  return data;
+}
+
 // ============================================
 // PORTFOLIO HELPERS
 // ============================================
@@ -240,6 +267,59 @@ export async function recordTransaction(
     })
     .select()
     .single();
+  
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Update portfolio holding current price
+ */
+export async function updateHoldingPrice(holdingId: string, currentPrice: number) {
+  const { data, error } = await supabase
+    .from('portfolio_holdings')
+    .update({ current_price: currentPrice })
+    .eq('id', holdingId)
+    .select()
+    .single();
+  
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Delete a portfolio holding
+ */
+export async function deleteHolding(holdingId: string) {
+  const { error } = await supabase
+    .from('portfolio_holdings')
+    .delete()
+    .eq('id', holdingId);
+  
+  if (error) throw error;
+}
+
+/**
+ * Delete a portfolio
+ */
+export async function deletePortfolio(portfolioId: string) {
+  const { error } = await supabase
+    .from('portfolios')
+    .delete()
+    .eq('id', portfolioId);
+  
+  if (error) throw error;
+}
+
+/**
+ * Get portfolio transactions
+ */
+export async function getPortfolioTransactions(portfolioId: string) {
+  const { data, error } = await supabase
+    .from('stock_transactions')
+    .select('*')
+    .eq('portfolio_id', portfolioId)
+    .order('transaction_date', { ascending: false });
   
   if (error) throw error;
   return data;
