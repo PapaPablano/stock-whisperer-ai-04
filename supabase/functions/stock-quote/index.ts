@@ -22,7 +22,50 @@ Deno.serve(async (req) => {
 
     console.log(`Fetching quote for ${symbol}`)
 
-    // Try Yahoo Finance first (no API key needed)
+    // Try Marketstack first (primary source)
+    const marketstackApiKey = Deno.env.get('MARKETSTACK_API_KEY')
+    
+    if (marketstackApiKey) {
+      try {
+        const marketstackResponse = await fetch(
+          `http://api.marketstack.com/v2/eod/latest?access_key=${marketstackApiKey}&symbols=${symbol}`
+        )
+        
+        if (marketstackResponse.ok) {
+          const marketstackData = await marketstackResponse.json()
+          
+          if (marketstackData.data && marketstackData.data.length > 0) {
+            const result = marketstackData.data[0]
+            
+            const data = {
+              symbol: result.symbol,
+              name: result.name || result.symbol, // v2 API provides company name
+              price: result.close,
+              change: result.close - result.open,
+              changePercent: ((result.close - result.open) / result.open) * 100,
+              volume: result.volume,
+              high: result.high,
+              low: result.low,
+              open: result.open,
+              previousClose: result.close, // Using close as previous close for EOD data
+              source: 'marketstack'
+            }
+
+            console.log(`Successfully fetched from Marketstack: ${symbol}`)
+            return new Response(
+              JSON.stringify(data),
+              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            )
+          }
+        }
+      } catch (marketstackError) {
+        console.log(`Marketstack failed for ${symbol}, trying Yahoo Finance...`, marketstackError)
+      }
+    } else {
+      console.log('MARKETSTACK_API_KEY not configured, skipping to Yahoo Finance...')
+    }
+
+    // Try Yahoo Finance second (no API key needed)
     try {
       const yahooResponse = await fetch(
         `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`
@@ -32,7 +75,6 @@ Deno.serve(async (req) => {
         const yahooData = await yahooResponse.json()
         const result = yahooData.chart.result[0]
         const meta = result.meta
-        const quote = result.indicators.quote[0]
         
         const data = {
           symbol: meta.symbol,

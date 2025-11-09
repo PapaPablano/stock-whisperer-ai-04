@@ -59,6 +59,38 @@ This project is built with:
 - React
 - shadcn-ui
 - Tailwind CSS
+- Supabase (Backend & Edge Functions)
+
+## Stock Data APIs
+
+This application uses a three-tier fallback system for maximum data reliability:
+
+### Primary: Marketstack API v2
+- **End-of-day data**: `/eod/latest` (free tier)
+- **Historical data**: `/eod` (with date range)
+- **Intraday data**: `/intraday` (paid tier - for real-time updates)
+- **Required Environment Variable**: `MARKETSTACK_API_KEY`
+
+### Secondary: Yahoo Finance API
+- Free, no API key required
+- Used as fallback when Marketstack is unavailable
+- Provides real-time quotes and historical data
+
+### Tertiary: Polygon.io API
+- **Required Environment Variable**: `POLYGON_API_KEY`
+- Used as final fallback when other sources fail
+- Provides comprehensive market data
+
+## Environment Variables
+
+Add these to your Supabase project settings:
+
+```bash
+MARKETSTACK_API_KEY=your_marketstack_api_key_here
+POLYGON_API_KEY=your_polygon_api_key_here
+```
+
+**Note**: The application will work with any combination of these API keys, but having all three provides the most reliable data access.
 
 ## How can I deploy this project?
 
