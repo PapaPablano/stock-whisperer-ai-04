@@ -140,41 +140,49 @@ ALTER TABLE user_preferences ENABLE ROW LEVEL SECURITY;
 ALTER TABLE stock_transactions ENABLE ROW LEVEL SECURITY;
 
 -- RLS Policies for Watchlists
+DROP POLICY IF EXISTS "Users can view their own watchlists" ON watchlists;
 CREATE POLICY "Users can view their own watchlists"
   ON watchlists FOR SELECT
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can create their own watchlists" ON watchlists;
 CREATE POLICY "Users can create their own watchlists"
   ON watchlists FOR INSERT
   WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update their own watchlists" ON watchlists;
 CREATE POLICY "Users can update their own watchlists"
   ON watchlists FOR UPDATE
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can delete their own watchlists" ON watchlists;
 CREATE POLICY "Users can delete their own watchlists"
   ON watchlists FOR DELETE
   USING (auth.uid() = user_id);
 
 -- RLS Policies for Watchlist Items
+DROP POLICY IF EXISTS "Users can view their watchlist items" ON watchlist_items;
 CREATE POLICY "Users can view their watchlist items"
   ON watchlist_items FOR SELECT
   USING (watchlist_id IN (
     SELECT id FROM watchlists WHERE user_id = auth.uid()
   ));
 
+DROP POLICY IF EXISTS "Users can create watchlist items" ON watchlist_items;
 CREATE POLICY "Users can create watchlist items"
   ON watchlist_items FOR INSERT
   WITH CHECK (watchlist_id IN (
     SELECT id FROM watchlists WHERE user_id = auth.uid()
   ));
 
+DROP POLICY IF EXISTS "Users can update their watchlist items" ON watchlist_items;
 CREATE POLICY "Users can update their watchlist items"
   ON watchlist_items FOR UPDATE
   USING (watchlist_id IN (
     SELECT id FROM watchlists WHERE user_id = auth.uid()
   ));
 
+DROP POLICY IF EXISTS "Users can delete their watchlist items" ON watchlist_items;
 CREATE POLICY "Users can delete their watchlist items"
   ON watchlist_items FOR DELETE
   USING (watchlist_id IN (
@@ -182,41 +190,49 @@ CREATE POLICY "Users can delete their watchlist items"
   ));
 
 -- RLS Policies for Portfolios
+DROP POLICY IF EXISTS "Users can view their own portfolios" ON portfolios;
 CREATE POLICY "Users can view their own portfolios"
   ON portfolios FOR SELECT
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can create their own portfolios" ON portfolios;
 CREATE POLICY "Users can create their own portfolios"
   ON portfolios FOR INSERT
   WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update their own portfolios" ON portfolios;
 CREATE POLICY "Users can update their own portfolios"
   ON portfolios FOR UPDATE
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can delete their own portfolios" ON portfolios;
 CREATE POLICY "Users can delete their own portfolios"
   ON portfolios FOR DELETE
   USING (auth.uid() = user_id);
 
 -- RLS Policies for Portfolio Holdings
+DROP POLICY IF EXISTS "Users can view their portfolio holdings" ON portfolio_holdings;
 CREATE POLICY "Users can view their portfolio holdings"
   ON portfolio_holdings FOR SELECT
   USING (portfolio_id IN (
     SELECT id FROM portfolios WHERE user_id = auth.uid()
   ));
 
+DROP POLICY IF EXISTS "Users can create portfolio holdings" ON portfolio_holdings;
 CREATE POLICY "Users can create portfolio holdings"
   ON portfolio_holdings FOR INSERT
   WITH CHECK (portfolio_id IN (
     SELECT id FROM portfolios WHERE user_id = auth.uid()
   ));
 
+DROP POLICY IF EXISTS "Users can update their portfolio holdings" ON portfolio_holdings;
 CREATE POLICY "Users can update their portfolio holdings"
   ON portfolio_holdings FOR UPDATE
   USING (portfolio_id IN (
     SELECT id FROM portfolios WHERE user_id = auth.uid()
   ));
 
+DROP POLICY IF EXISTS "Users can delete their portfolio holdings" ON portfolio_holdings;
 CREATE POLICY "Users can delete their portfolio holdings"
   ON portfolio_holdings FOR DELETE
   USING (portfolio_id IN (
@@ -224,42 +240,51 @@ CREATE POLICY "Users can delete their portfolio holdings"
   ));
 
 -- RLS Policies for Price Alerts
+DROP POLICY IF EXISTS "Users can view their own price alerts" ON price_alerts;
 CREATE POLICY "Users can view their own price alerts"
   ON price_alerts FOR SELECT
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can create their own price alerts" ON price_alerts;
 CREATE POLICY "Users can create their own price alerts"
   ON price_alerts FOR INSERT
   WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update their own price alerts" ON price_alerts;
 CREATE POLICY "Users can update their own price alerts"
   ON price_alerts FOR UPDATE
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can delete their own price alerts" ON price_alerts;
 CREATE POLICY "Users can delete their own price alerts"
   ON price_alerts FOR DELETE
   USING (auth.uid() = user_id);
 
 -- RLS Policies for User Preferences
+DROP POLICY IF EXISTS "Users can view their own preferences" ON user_preferences;
 CREATE POLICY "Users can view their own preferences"
   ON user_preferences FOR SELECT
   USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can insert their own preferences" ON user_preferences;
 CREATE POLICY "Users can insert their own preferences"
   ON user_preferences FOR INSERT
   WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update their own preferences" ON user_preferences;
 CREATE POLICY "Users can update their own preferences"
   ON user_preferences FOR UPDATE
   USING (auth.uid() = user_id);
 
 -- RLS Policies for Stock Transactions
+DROP POLICY IF EXISTS "Users can view their portfolio transactions" ON stock_transactions;
 CREATE POLICY "Users can view their portfolio transactions"
   ON stock_transactions FOR SELECT
   USING (portfolio_id IN (
     SELECT id FROM portfolios WHERE user_id = auth.uid()
   ));
 
+DROP POLICY IF EXISTS "Users can create portfolio transactions" ON stock_transactions;
 CREATE POLICY "Users can create portfolio transactions"
   ON stock_transactions FOR INSERT
   WITH CHECK (portfolio_id IN (
@@ -286,6 +311,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Trigger to auto-update portfolio value when holdings change
+DROP TRIGGER IF EXISTS trigger_update_portfolio_value ON portfolio_holdings;
 CREATE TRIGGER trigger_update_portfolio_value
 AFTER INSERT OR UPDATE OR DELETE ON portfolio_holdings
 FOR EACH ROW
@@ -301,21 +327,25 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Triggers for updated_at columns
+DROP TRIGGER IF EXISTS update_watchlists_updated_at ON watchlists;
 CREATE TRIGGER update_watchlists_updated_at
 BEFORE UPDATE ON watchlists
 FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_portfolios_updated_at ON portfolios;
 CREATE TRIGGER update_portfolios_updated_at
 BEFORE UPDATE ON portfolios
 FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_portfolio_holdings_updated_at ON portfolio_holdings;
 CREATE TRIGGER update_portfolio_holdings_updated_at
 BEFORE UPDATE ON portfolio_holdings
 FOR EACH ROW
 EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_user_preferences_updated_at ON user_preferences;
 CREATE TRIGGER update_user_preferences_updated_at
 BEFORE UPDATE ON user_preferences
 FOR EACH ROW
