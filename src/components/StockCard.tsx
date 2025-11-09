@@ -9,13 +9,14 @@ interface StockCardProps {
   change: number;
   changePercent: number;
   volume?: string;
+  onClick?: () => void;
 }
 
-export const StockCard = ({ symbol, name, price, change, changePercent, volume }: StockCardProps) => {
+export const StockCard = ({ symbol, name, price, change, changePercent, volume, onClick }: StockCardProps) => {
   const isPositive = change >= 0;
   
   return (
-    <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+    <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={onClick}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div>
