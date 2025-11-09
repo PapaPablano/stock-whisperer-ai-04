@@ -15,8 +15,9 @@ import type { PriceData } from "@/lib/technicalIndicators";
 
 const Index = () => {
   const [selectedSymbol, setSelectedSymbol] = useState("AAPL");
+  const [dateRange, setDateRange] = useState("1mo"); // Default to 1 month
   const { data: liveQuote, isLoading: quoteLoading } = useStockQuote(selectedSymbol);
-  const { data: historicalData, isLoading: historyLoading } = useStockHistorical(selectedSymbol, "3mo");
+  const { data: historicalData, isLoading: historyLoading } = useStockHistorical(selectedSymbol, dateRange);
   
   // Convert historical data to the format needed for charts
   const priceData = useMemo(() => {
@@ -65,6 +66,10 @@ const Index = () => {
 
   const handleSymbolSelect = (symbol: string) => {
     setSelectedSymbol(symbol.toUpperCase());
+  };
+
+  const handleDateRangeChange = (range: string) => {
+    setDateRange(range);
   };
 
   return (
@@ -149,7 +154,12 @@ const Index = () => {
 
         {/* Main Price Chart */}
         <section>
-          <PriceChart symbol={selectedSymbol} data={simplePriceData} />
+          <PriceChart 
+            symbol={selectedSymbol} 
+            data={simplePriceData} 
+            selectedRange={dateRange}
+            onRangeChange={handleDateRangeChange}
+          />
         </section>
 
         {/* Technical Analysis Dashboard */}

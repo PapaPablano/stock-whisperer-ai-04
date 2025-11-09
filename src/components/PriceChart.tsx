@@ -5,9 +5,22 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 interface PriceChartProps {
   symbol: string;
   data: Array<{ date: string; price: number; volume: number }>;
+  selectedRange: string;
+  onRangeChange: (range: string) => void;
 }
 
-export const PriceChart = ({ symbol, data }: PriceChartProps) => {
+export const PriceChart = ({ symbol, data, selectedRange, onRangeChange }: PriceChartProps) => {
+  // Map display labels to API range values
+  const rangeMap: Record<string, string> = {
+    "1D": "1d",
+    "5D": "5d",
+    "1M": "1mo",
+    "3M": "3mo",
+    "6M": "6mo",
+    "1Y": "1y",
+    "5Y": "5y",
+  };
+  
   const timeRanges = ["1D", "5D", "1M", "3M", "6M", "1Y", "5Y"];
 
   return (
@@ -19,9 +32,10 @@ export const PriceChart = ({ symbol, data }: PriceChartProps) => {
             {timeRanges.map((range) => (
               <Button
                 key={range}
-                variant={range === "1M" ? "default" : "ghost"}
+                variant={selectedRange === rangeMap[range] ? "default" : "ghost"}
                 size="sm"
                 className="text-xs"
+                onClick={() => onRangeChange(rangeMap[range])}
               >
                 {range}
               </Button>
