@@ -451,6 +451,10 @@ export function SuperTrendAIChart({ data, meta, symbol }: SuperTrendAIChartProps
     ...point,
     buySignal: point.signal === 1 ? point.supertrend ?? point.close : null,
     sellSignal: point.signal === -1 ? point.supertrend ?? point.close : null,
+    trailLong: point.trend === 1 ? point.supertrend : null,
+    trailShort: point.trend === -1 ? point.supertrend : null,
+    atrUpper: point.supertrend !== null && point.atr !== null ? point.supertrend + point.atr : null,
+    atrLower: point.supertrend !== null && point.atr !== null ? point.supertrend - point.atr : null,
   }));
 
   const desiredLabel = meta?.fromCluster ?? 'Best';
@@ -544,11 +548,20 @@ export function SuperTrendAIChart({ data, meta, symbol }: SuperTrendAIChartProps
             />
             <Line
               type="monotone"
-              dataKey="supertrend"
+              dataKey="trailLong"
               stroke="#22c55e"
-              strokeWidth={2}
+              strokeWidth={3}
               dot={false}
-              name="SuperTrend"
+              name="SuperTrend (Bullish)"
+              connectNulls
+            />
+            <Line
+              type="monotone"
+              dataKey="trailShort"
+              stroke="#f43f5e"
+              strokeWidth={3}
+              dot={false}
+              name="SuperTrend (Bearish)"
               connectNulls
             />
             <Line
@@ -559,6 +572,26 @@ export function SuperTrendAIChart({ data, meta, symbol }: SuperTrendAIChartProps
               strokeDasharray="4 2"
               dot={false}
               name="Adaptive MA"
+              connectNulls
+            />
+            <Line
+              type="monotone"
+              dataKey="atrUpper"
+              stroke="#0ea5e9"
+              strokeWidth={1}
+              strokeDasharray="5 4"
+              dot={false}
+              name="ATR Trail Upper"
+              connectNulls
+            />
+            <Line
+              type="monotone"
+              dataKey="atrLower"
+              stroke="#0ea5e9"
+              strokeWidth={1}
+              strokeDasharray="5 4"
+              dot={false}
+              name="ATR Trail Lower"
               connectNulls
             />
             <Line
