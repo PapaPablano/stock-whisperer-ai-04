@@ -14,14 +14,21 @@ export const useStockHistorical = (symbol: string, range: string = '1mo') => {
   return useQuery({
     queryKey: ['stock-historical', symbol, range],
     queryFn: async () => {
+      console.log(`[useStockHistorical] Fetching ${symbol} with range: ${range}`);
       const { data, error } = await supabase.functions.invoke('stock-historical', {
         body: { symbol, range },
       });
 
-      if (error) throw error;
+      if (error) {
+        console.error('[useStockHistorical] Error:', error);
+        throw error;
+      }
+      
+      console.log(`[useStockHistorical] Received ${data?.data?.length || 0} data points from ${data?.source}`);
       return data.data as HistoricalData[];
     },
     enabled: !!symbol,
-    staleTime: 5 * 60 * 1000, // Consider data fresh for 5 minutes
+    staleTime: 0, // Always refetch when query key changes
+    refetchOnWindowFocus: false, // Don't refetch on window focus
   });
 };

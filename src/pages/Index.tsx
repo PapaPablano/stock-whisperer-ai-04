@@ -22,12 +22,42 @@ const Index = () => {
   // Convert historical data to the format needed for charts
   const priceData = useMemo(() => {
     if (!historicalData || historicalData.length === 0) {
-      // Generate mock data with proper format
+      // Generate mock data with proper format based on selected date range
       const mockData: PriceData[] = [];
       const basePrice = 170;
       let currentPrice = basePrice;
       
-      for (let i = 30; i >= 0; i--) {
+      // Calculate number of days based on date range
+      let daysToGenerate = 30;
+      switch(dateRange) {
+        case '1d':
+          daysToGenerate = 1;
+          break;
+        case '5d':
+          daysToGenerate = 5;
+          break;
+        case '1mo':
+          daysToGenerate = 30;
+          break;
+        case '3mo':
+          daysToGenerate = 90;
+          break;
+        case '6mo':
+          daysToGenerate = 180;
+          break;
+        case '1y':
+          daysToGenerate = 365;
+          break;
+        case '5y':
+          daysToGenerate = 1825; // 5 years
+          break;
+        default:
+          daysToGenerate = 30;
+      }
+      
+      console.log(`Generating ${daysToGenerate} days of mock data for range: ${dateRange}`);
+      
+      for (let i = daysToGenerate - 1; i >= 0; i--) {
         const date = new Date();
         date.setDate(date.getDate() - i);
         
@@ -49,11 +79,12 @@ const Index = () => {
     }
     
     // Ensure dates are in consistent format
+    console.log(`Using real API data: ${historicalData.length} data points`);
     return historicalData.map(item => ({
       ...item,
       date: typeof item.date === 'string' ? item.date.split('T')[0] : item.date,
     }));
-  }, [historicalData]);
+  }, [historicalData, dateRange]);
 
   // Format data for PriceChart component (simplified format)
   const simplePriceData = useMemo(() => {
@@ -112,6 +143,10 @@ const Index = () => {
             {(quoteLoading || historyLoading) && (
               <Badge variant="secondary">Loading...</Badge>
             )}
+            {/* Debug info */}
+            <Badge variant="outline" className="text-xs">
+              Range: {dateRange} | Data Points: {priceData.length}
+            </Badge>
           </div>
         </section>
 
