@@ -22,6 +22,7 @@ import type { Bar } from "@/lib/aggregateBars";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { TIME_BUTTONS } from "@/lib/chartConfig";
+import { useToast } from "@/hooks/use-toast";
 
 const formatCurrency = (value?: number | null) => {
   if (value === null || value === undefined || Number.isNaN(value)) return "—";
@@ -71,7 +72,9 @@ const Index = () => {
     ...DEFAULT_INDICATOR_CONFIG,
   }));
   const [candleInterval, setCandleInterval] = useState<CandleInterval>("1d");
+  const [intradayUnavailable, setIntradayUnavailable] = useState(false);
   const { data: liveQuote, isLoading: quoteLoading } = useStockQuote(selectedSymbol);
+  const { toast } = useToast();
 
   const intervalMap: Record<CandleInterval, Interval> = {
     "10m": "10m",
@@ -107,7 +110,7 @@ const Index = () => {
       setDateRange("5d");
     }
   }, [candleInterval, dateRange]);
-  
+
   // Calculate the range needed for indicator calculations (always fetch enough data)
   const calculationRange = useMemo(() => {
     // For short display ranges, fetch more data to calculate long-period indicators (SMA 200, etc.)
@@ -218,6 +221,25 @@ const Index = () => {
     error: unifiedError,
   } = unified;
 
+  useEffect(() => {
+    if (candleInterval === "1d") {
+      return;
+    }
+    if (!unifiedError) {
+      return;
+    }
+    const message = unifiedError instanceof Error ? unifiedError.message : String(unifiedError);
+    if (message.toLowerCase().includes("intraday data unavailable")) {
+      setCandleInterval("1d");
+      setIntradayUnavailable(true);
+      toast({
+        title: "Intraday data unavailable",
+        description:
+          "Intraday intervals require a premium data plan. Showing daily candles instead.",
+      });
+    }
+  }, [candleInterval, toast, unifiedError]);
+
   const selectedBarsForDisplay = useMemo<Bar[]>(() => {
     if (!unifiedBars || unifiedBars.length === 0) {
       return [];
@@ -295,11 +317,16 @@ const Index = () => {
 
   const isIntradayActive = chartInterval !== "1d";
   const isIntradayPending = unifiedLoading && isIntradayActive;
-  const intradayErrorMessage = isIntradayActive && unifiedError
-    ? unifiedError instanceof Error
-      ? unifiedError.message
-      : String(unifiedError)
-    : null;
+  const intradayErrorMessage = useMemo(() => {
+    if (intradayUnavailable) {
+      return "Intraday data requires a premium data plan. Showing daily candles instead.";
+    }
+    if (isIntradayActive && unifiedError) {
+      const raw = unifiedError instanceof Error ? unifiedError.message : String(unifiedError);
+      return raw;
+    }
+    return null;
+  }, [intradayUnavailable, isIntradayActive, unifiedError]);
 
   const plotlyChartDataOverride = useMemo(() => {
     const dates = selectedBarsForDisplay.map((bar) => bar.datetime);
@@ -564,13 +591,19 @@ const Index = () => {
                     <div className="flex flex-wrap gap-1">
                       {CANDLE_INTERVAL_OPTIONS.map((option) => {
                         const active = candleInterval === option.value;
+                        const disabled = option.value !== "1d" && intradayUnavailable;
                         return (
                           <Button
                             key={option.value}
                             variant={active ? "secondary" : "ghost"}
                             size="sm"
                             className="text-xs"
-                            onClick={() => setCandleInterval(option.value as CandleInterval)}
+                            disabled={disabled}
+                            onClick={() => {
+                              if (!disabled) {
+                                setCandleInterval(option.value as CandleInterval);
+                              }
+                            }}
                           >
                             {option.label.toUpperCase()}
                           </Button>
