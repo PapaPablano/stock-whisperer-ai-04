@@ -29,6 +29,11 @@ interface PlotlyPriceChartProps {
   chartDataOverride?: PlotlyChartDataOverride;
 }
 
+type AxisRangeBreak = {
+  pattern: "day of week" | "hour";
+  bounds: [number, number];
+};
+
 export const PlotlyPriceChart: React.FC<PlotlyPriceChartProps> = ({
   symbol,
   interval,
@@ -42,6 +47,14 @@ export const PlotlyPriceChart: React.FC<PlotlyPriceChartProps> = ({
     { session: "EQUITY_RTH" }
   );
   const reportedRef = useRef<string | null>(null);
+
+  const rangeBreaks = useMemo<AxisRangeBreak[]>(() => {
+    const breaks: AxisRangeBreak[] = [{ pattern: "day of week", bounds: [6, 1] }];
+    if (interval !== "1d") {
+      breaks.push({ pattern: "hour", bounds: [16, 9.5] });
+    }
+    return breaks;
+  }, [interval]);
 
   const effectiveData = useMemo(() => {
     if (!chartDataOverride) {
@@ -159,7 +172,10 @@ export const PlotlyPriceChart: React.FC<PlotlyPriceChartProps> = ({
     },
   ];
 
-    const layout: Partial<Layout> & { separators?: string } = {
+    const layout: (Partial<Layout> & {
+      separators?: string;
+      xaxis?: (Layout["xaxis"] & { rangebreaks?: AxisRangeBreak[] }) | undefined;
+    }) = {
     ...DARK_LAYOUT,
     title: { text: `${symbol.toUpperCase()} • ${interval.toUpperCase()} • ${effectiveData.source}` },
     height,
@@ -172,6 +188,7 @@ export const PlotlyPriceChart: React.FC<PlotlyPriceChartProps> = ({
       tickformat: tickSettings.tickformat,
       dtick: tickSettings.dtick,
       ticklabelmode: "period",
+        rangebreaks: rangeBreaks,
     },
     yaxis: {
       ...(DARK_LAYOUT.yaxis ?? {}),
