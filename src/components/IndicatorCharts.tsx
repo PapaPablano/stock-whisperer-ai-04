@@ -15,7 +15,7 @@ import {
   ReferenceArea,
   Cell,
 } from 'recharts';
-import type { SuperTrendAIInfo, TrendDirection, SuperTrendAIExtras } from '../lib/superTrendAI';
+import type { SuperTrendAIInfo, TrendDirection, SuperTrendAIExtras, SignalDirection } from '../lib/superTrendAI';
 
 // Utility function to calculate appropriate X-axis tick interval based on data length
 // This ensures readable date labels regardless of the selected time range
@@ -438,7 +438,7 @@ interface SuperTrendAIChartProps {
     upperBand: number | null;
     lowerBand: number | null;
     ama: number | null;
-    signal: TrendDirection;
+  signal: SignalDirection;
     trend: TrendDirection;
     distance: number | null;
     atr: number | null;
@@ -453,9 +453,11 @@ export function SuperTrendAIChart({ data, meta, extras, symbol }: SuperTrendAICh
   const chartData = data.map((point, index) => {
     const perfAma = extras?.perfAma?.[index] ?? point.ama;
     const trailLong = extras?.tsBull?.[index] ?? (point.trend === 1 ? point.supertrend : null);
-    const trailShort = extras?.tsBear?.[index] ?? (point.trend === -1 ? point.supertrend : null);
-    const amaBull = extras?.amaBull?.[index] ?? (point.trend === 1 ? perfAma : null);
-    const amaBear = extras?.amaBear?.[index] ?? (point.trend === -1 ? perfAma : null);
+    const trailShort = extras?.tsBear?.[index] ?? (point.trend === 0 ? point.supertrend : null);
+    const fallbackAmaBull = perfAma !== null && point.close > perfAma ? perfAma : null;
+    const fallbackAmaBear = perfAma !== null && point.close <= perfAma ? perfAma : null;
+    const amaBull = extras?.amaBull?.[index] ?? fallbackAmaBull;
+    const amaBear = extras?.amaBear?.[index] ?? fallbackAmaBear;
 
     return {
       ...point,

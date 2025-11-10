@@ -155,7 +155,7 @@ export const TradingViewChart = ({
     );
 
     const bearishSupertrend = supertrendValues.map((point) =>
-      point && point.trend === -1 ? point.supertrend : null,
+      point && point.trend === 0 ? point.supertrend : null,
     );
 
     const macdHistogramColors = filtered.macd.histogram.map((value) =>

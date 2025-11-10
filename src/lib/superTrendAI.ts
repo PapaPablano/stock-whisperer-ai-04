@@ -1,6 +1,8 @@
 import type { PriceData } from "@/lib/technicalIndicators";
 
-export type TrendDirection = -1 | 0 | 1;
+export type TrendDirection = 0 | 1;
+export type SignalDirection = -1 | 0 | 1;
+type RawTrend = -1 | 0 | 1;
 
 export interface SuperTrendAISeriesPoint {
   date: string;
@@ -10,7 +12,7 @@ export interface SuperTrendAISeriesPoint {
   upperBand: number | null;
   lowerBand: number | null;
   ama: number | null;
-  signal: TrendDirection;
+  signal: SignalDirection;
   distance: number | null;
   targetFactor: number | null;
   targetFactorHistory?: number;
@@ -79,7 +81,14 @@ export interface SuperTrendAIExtras {
   rawStop: (number | null)[];
   perfAma: (number | null)[];
   targetFactorSeries: number[];
-  regimeSeries: number[];
+  regimeSeries: TrendDirection[];
+}
+
+export interface SuperTrendAIDashboard {
+  targetFactor: number;
+  perfIdx: number;
+  clusterSizes: { best: number; avg: number; worst: number };
+  [key: string]: unknown;
 }
 
 export interface SuperTrendAIInfo {
@@ -115,6 +124,7 @@ export interface SuperTrendAIResult {
   series: SuperTrendAISeriesPoint[];
   info: SuperTrendAIInfo;
   extras: SuperTrendAIExtras;
+  dashboard: SuperTrendAIDashboard;
 }
 
 const DEFAULT_OPTIONS: Required<SuperTrendAIOptions> = {
@@ -180,6 +190,11 @@ const createEmptyResult = (
     perfAma: [],
     targetFactorSeries: [],
     regimeSeries: [],
+  },
+  dashboard: {
+    targetFactor: config.minMultiplier,
+    perfIdx: 0,
+    clusterSizes: { best: 0, avg: 0, worst: 0 },
   },
 });
 
@@ -282,7 +297,7 @@ const calculateSupertrendForFactor = (
 ) => {
   const length = data.length;
   const supertrend = new Array<number>(length).fill(0);
-  const trend = new Array<TrendDirection>(length).fill(0);
+  const trend = new Array<RawTrend>(length).fill(0);
   const finalUpper = new Array<number>(length).fill(0);
   const finalLower = new Array<number>(length).fill(0);
 
@@ -339,7 +354,7 @@ const calculateSupertrendForFactor = (
 const calculatePerformance = (
   data: PriceData[],
   supertrend: number[],
-  trend: TrendDirection[],
+  trend: RawTrend[],
   perfAlpha: number,
 ): number => {
   if (data.length === 0) {
@@ -556,7 +571,7 @@ export const calculateSuperTrendAI = (
 
   const performances: number[] = [];
   const supertrendsByFactor: number[][] = [];
-  const trendsByFactor: TrendDirection[][] = [];
+  const trendsByFactor: RawTrend[][] = [];
   const upperBandsByFactor: number[][] = [];
   const lowerBandsByFactor: number[][] = [];
 
@@ -699,12 +714,13 @@ export const calculateSuperTrendAI = (
   const tsBearSeries: (number | null)[] = [];
   const amaBullSeries: (number | null)[] = [];
   const amaBearSeries: (number | null)[] = [];
-  const regimeSeries: number[] = [];
+  const regimeSeries: TrendDirection[] = [];
+  const rawTrendSeries: RawTrend[] = [];
 
   const series: SuperTrendAISeriesPoint[] = [];
-  let pendingSignal: TrendDirection = 0;
-  let confirmCountdown: { direction: TrendDirection; remaining: number } | null = null;
-  let currentRunTrend: TrendDirection = 0;
+  let pendingSignal: SignalDirection = 0;
+  let confirmCountdown: { direction: SignalDirection; remaining: number } | null = null;
+  let currentRunTrend: RawTrend = 0;
   let currentRunLength = 0;
   const trendRuns: number[] = [];
   let trendChangeCount = 0;
@@ -713,7 +729,10 @@ export const calculateSuperTrendAI = (
     const point = dataSlice[index];
     const supertrendRaw = chosenSupertrend[index];
     const supertrendValue = Number.isFinite(supertrendRaw) ? supertrendRaw : null;
-    const trendValue = chosenTrend[index] ?? 0;
+  const trendValue = chosenTrend[index] ?? 0;
+  const regime = trendValue === 1 ? 1 : 0;
+  const isBull = regime === 1;
+  const isBear = trendValue === -1;
     const upperValue = Number.isFinite(chosenUpper[index]) ? chosenUpper[index] : null;
     const lowerValue = Number.isFinite(chosenLower[index]) ? chosenLower[index] : null;
 
@@ -755,10 +774,10 @@ export const calculateSuperTrendAI = (
         trendChangeCount += 1;
       }
 
-      let nextSignal: TrendDirection = 0;
+      let nextSignal: SignalDirection = 0;
       if (trendValue === 1) {
         nextSignal = 1;
-      } else if (trendValue === -1) {
+      } else if (isBear) {
         nextSignal = -1;
       } else {
         confirmCountdown = null;
@@ -815,17 +834,21 @@ export const calculateSuperTrendAI = (
     tsSeries.push(stopForPlot);
     rawStops.push(supertrendValue);
     perfAmaSeries.push(amaPlot);
-    regimeSeries.push(trendValue);
-    tsBullSeries.push(trendValue === 1 ? stopForPlot : null);
-    tsBearSeries.push(trendValue === -1 ? stopForPlot : null);
-    amaBullSeries.push(trendValue === 1 ? amaPlot : null);
-    amaBearSeries.push(trendValue === -1 ? amaPlot : null);
+  rawTrendSeries.push(trendValue);
+  regimeSeries.push(regime);
+  tsBullSeries.push(isBull ? stopForPlot : null);
+  tsBearSeries.push(isBear ? stopForPlot : null);
+  const amaForSplit = amaPlot;
+  const amaBullValue = amaForSplit !== null && point.close > amaForSplit ? amaForSplit : null;
+  const amaBearValue = amaForSplit !== null && point.close <= amaForSplit ? amaForSplit : null;
+  amaBullSeries.push(amaBullValue);
+  amaBearSeries.push(amaBearValue);
 
     series.push({
       date: point.date,
       close: point.close,
       supertrend: supertrendValue,
-      trend: trendValue,
+      trend: regime,
       upperBand: upperValue,
       lowerBand: lowerValue,
       signal,
@@ -852,7 +875,7 @@ export const calculateSuperTrendAI = (
   const normalizerDen = perfDenominator;
 
   const barGradient = perfIdxSeries.map((value, index) => {
-    const trendValue = regimeSeries[index] ?? 0;
+    const trendValue = rawTrendSeries[index] ?? 0;
     if (trendValue === 0) {
       return null;
     }
@@ -943,9 +966,22 @@ export const calculateSuperTrendAI = (
     regimeSeries,
   };
 
+  const clusterSizes = {
+    best: clusterDiagnostics.Best?.size ?? 0,
+    avg: clusterDiagnostics.Average?.size ?? 0,
+    worst: clusterDiagnostics.Worst?.size ?? 0,
+  };
+
+  const dashboard: SuperTrendAIDashboard = {
+    targetFactor,
+    perfIdx: targetDetails.perfIdxLatest,
+    clusterSizes,
+  };
+
   return {
     series,
     info,
     extras,
+    dashboard,
   };
 };

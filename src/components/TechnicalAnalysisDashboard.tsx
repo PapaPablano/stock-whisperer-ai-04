@@ -19,6 +19,7 @@ import {
   type SuperTrendAIResult,
   type SuperTrendAIExtras,
   type TrendDirection,
+  type SignalDirection,
 } from '../lib/superTrendAI';
 
 type SuperTrendAIChartPoint = {
@@ -29,7 +30,7 @@ type SuperTrendAIChartPoint = {
   upperBand: number | null;
   lowerBand: number | null;
   ama: number | null;
-  signal: TrendDirection;
+  signal: SignalDirection;
   trend: TrendDirection;
   distance: number | null;
   atr: number | null;
@@ -168,7 +169,7 @@ export function TechnicalAnalysisDashboard({
             upperBand: rawPoint.upperBand,
             lowerBand: rawPoint.lowerBand,
             ama: rawPoint.ama,
-            signal: rawPoint.signal,
+          signal: rawPoint.signal,
             trend: rawPoint.trend,
             distance: rawPoint.distance,
             atr: rawPoint.atr ?? null,
@@ -182,7 +183,7 @@ export function TechnicalAnalysisDashboard({
           upperBand: number | null;
           lowerBand: number | null;
           ama: number | null;
-          signal: TrendDirection;
+    signal: SignalDirection;
           trend: TrendDirection;
           distance: number | null;
           atr: number | null;

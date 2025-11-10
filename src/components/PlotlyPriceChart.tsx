@@ -123,6 +123,20 @@ export const PlotlyPriceChart: React.FC<PlotlyPriceChartProps> = ({
     reportedRef.current = key;
   }, [effectiveData, onDataReady]);
 
+  useEffect(() => {
+    if (effectiveData.st && effectiveData.dates.length > 0) {
+      const { extras, series } = effectiveData.st;
+      console.group("SuperTrend Data Debug");
+      console.log("Has extras:", Boolean(extras));
+      console.log("tsBull length:", extras?.tsBull?.length ?? 0);
+      console.log("tsBull sample:", extras?.tsBull?.slice(-5));
+      console.log("Series length:", series.length);
+      console.log("Series sample:", series.slice(-5));
+      console.log("Trend values:", series.map((point) => point.trend).slice(-10));
+      console.groupEnd();
+    }
+  }, [effectiveData.st, effectiveData.dates]);
+
   const traces = useMemo<Data[]>(() => {
     const base: Data[] = [
       {
@@ -164,26 +178,28 @@ export const PlotlyPriceChart: React.FC<PlotlyPriceChartProps> = ({
     const hasFinite = (values: Array<number | null | undefined>) =>
       values.some((value) => typeof value === "number" && Number.isFinite(value));
 
-    const tsBullValues = extras?.tsBull?.length
-      ? extras.tsBull
-      : fallbackSeries.map((point) =>
-          point.trend === 1 ? point.supertrend ?? null : null
-        );
-    const tsBearValues = extras?.tsBear?.length
-      ? extras.tsBear
-      : fallbackSeries.map((point) =>
-          point.trend === -1 ? point.supertrend ?? null : null
-        );
+      const tsBullValues = extras?.tsBull?.length
+        ? extras.tsBull
+        : fallbackSeries.map((point) =>
+            point.trend === 1 ? point.supertrend ?? null : null
+          );
+      const tsBearValues = extras?.tsBear?.length
+        ? extras.tsBear
+        : fallbackSeries.map((point) =>
+            point.trend === 0 ? point.supertrend ?? null : null
+          );
     const amaBullValues = extras?.amaBull?.length
       ? extras.amaBull
-      : fallbackSeries.map((point) =>
-          point.trend === 1 ? point.ama ?? point.supertrend ?? null : null
-        );
+      : fallbackSeries.map((point) => {
+          const ama = point.ama ?? point.supertrend;
+          return ama != null && point.close > ama ? ama : null;
+        });
     const amaBearValues = extras?.amaBear?.length
       ? extras.amaBear
-      : fallbackSeries.map((point) =>
-          point.trend === -1 ? point.ama ?? point.supertrend ?? null : null
-        );
+      : fallbackSeries.map((point) => {
+          const ama = point.ama ?? point.supertrend;
+          return ama != null && point.close <= ama ? ama : null;
+        });
     const perfAmaValues = extras?.perfAma?.length
       ? extras.perfAma
       : fallbackSeries.map((point) => point.ama ?? point.supertrend ?? null);
@@ -277,8 +293,8 @@ export const PlotlyPriceChart: React.FC<PlotlyPriceChartProps> = ({
       } as Data);
     }
 
-    const buySignals: { x: string; y: number }[] = [];
-    const sellSignals: { x: string; y: number }[] = [];
+  const buySignals: { x: string; y: number }[] = [];
+  const sellSignals: { x: string; y: number }[] = [];
     fallbackSeries.forEach((point, index) => {
       if (!point.signal) {
         return;

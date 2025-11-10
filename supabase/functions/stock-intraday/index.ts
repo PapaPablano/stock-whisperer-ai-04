@@ -1,4 +1,8 @@
 import { supabaseAdmin } from '../_shared/supabaseAdminClient.ts'
+import { FinnhubClient } from '../../../services/finnhub.ts'
+import { BarsFallback } from '../../../services/polygonFallback.ts'
+import type { Bar as FallbackBar } from '../../../services/polygonFallback.ts'
+import type { PolygonClient } from '../../../services/polygon.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -33,6 +37,16 @@ interface PolygonAggsResponse {
   message?: string;
 }
 
+class PolygonApiError extends Error {
+  status?: number
+
+  constructor(status: number | undefined, message: string) {
+    super(message)
+    this.status = status
+    this.name = 'PolygonApiError'
+  }
+}
+
 const CACHE_PREFIX = 'intraday'
 const CACHE_TTL_MS = 45 * 1000
 const MIN_FETCH_INTERVAL_MS = 250
@@ -43,6 +57,18 @@ const JITTER_MS = 250
 const MAX_POLYGON_CALLS_PER_SECOND = 4
 const MAX_POLYGON_CALLS_PER_MINUTE = 5
 const RATE_LIMIT_KEY = `${CACHE_PREFIX}:polygon:budget`
+
+const FINNHUB_API_KEY = Deno.env.get('FINNHUB_API_KEY') ?? ''
+const FINNHUB_CACHE_TTL_MS = Number(Deno.env.get('FINNHUB_CACHE_TTL_MS') ?? '60000')
+const FINNHUB_REQUEST_DEDUP = (Deno.env.get('FINNHUB_REQUEST_DEDUP') ?? 'true').toLowerCase() !== 'false'
+
+const sharedFinnhubClient = FINNHUB_API_KEY
+  ? new FinnhubClient({
+      apiKey: FINNHUB_API_KEY,
+      cacheTtlMs: FINNHUB_CACHE_TTL_MS,
+      requestDedup: FINNHUB_REQUEST_DEDUP,
+    })
+  : null
 
 const INTERVAL_MAP = new Map<string, { multiplier: number; timeframe: 'minute' | 'hour' }>([
   ['1m', { multiplier: 1, timeframe: 'minute' }],
@@ -309,6 +335,119 @@ const buildPolygonUrl = (
   return base.toString();
 };
 
+const normalizeIntervalKey = (value: string): string => {
+  if (!value) return '1m'
+  const normalized = value.toLowerCase()
+  switch (normalized) {
+    case '1':
+    case '1m':
+      return '1m'
+    case '5':
+    case '5m':
+      return '5m'
+    case '10':
+    case '10m':
+      return '10m'
+    case '15':
+    case '15m':
+      return '15m'
+    case '30':
+    case '30m':
+      return '30m'
+    case '60':
+    case '60m':
+    case '1h':
+      return '1h'
+    case '4h':
+    case '240':
+    case '240m':
+      return '4h'
+    default:
+      return normalized
+  }
+}
+
+const fetchPolygonAggs = async (
+  symbol: string,
+  intervalKey: string,
+  config: { multiplier: number; timeframe: 'minute' | 'hour' },
+  from: string,
+  to: string,
+  apiKey: string,
+): Promise<PolygonAggsResult[]> => {
+  const fetchPolygon = createRateLimitedFetcher()
+  const results: PolygonAggsResult[] = []
+  const ticker = symbol.toUpperCase()
+
+  let cursor: string | null = null
+  let url = buildPolygonUrl(ticker, config.multiplier, config.timeframe, from, to, apiKey, cursor)
+
+  while (url) {
+    let polygonResponse: Response
+    try {
+      polygonResponse = await fetchPolygon(url)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      throw new PolygonApiError(undefined, message)
+    }
+
+    if (!polygonResponse.ok) {
+      const body = await polygonResponse.text()
+      throw new PolygonApiError(polygonResponse.status, body || 'Polygon request failed')
+    }
+
+    const polygonData = (await polygonResponse.json()) as PolygonAggsResponse
+    if (polygonData.error || polygonData.message) {
+      throw new PolygonApiError(polygonResponse.status, polygonData.error ?? polygonData.message ?? 'Polygon error')
+    }
+
+    if (polygonData.results?.length) {
+      results.push(...polygonData.results)
+    }
+
+    if (polygonData.next_url) {
+      const nextUrl = new URL(polygonData.next_url)
+      cursor = nextUrl.searchParams.get('cursor')
+      url = cursor
+        ? buildPolygonUrl(ticker, config.multiplier, config.timeframe, from, to, apiKey, cursor)
+        : null
+    } else {
+      url = null
+    }
+  }
+
+  return results
+}
+
+const polygonAggsToBars = (agg: PolygonAggsResult[]): FallbackBar[] =>
+  agg.map((item) => ({
+    t: item.t,
+    o: item.o,
+    h: item.h,
+    l: item.l,
+    c: item.c,
+    v: item.v,
+  }))
+
+const mapBarsToIntradayPoints = (bars: FallbackBar[], cutoffTimestamp: number | null): IntradayPoint[] => {
+  const filtered = cutoffTimestamp ? bars.filter((bar) => bar.t >= cutoffTimestamp) : bars
+
+  return filtered.map((bar) => {
+    const date = new Date(bar.t)
+    const iso = date.toISOString()
+    return {
+      datetime: iso,
+      date: iso.split('T')[0],
+      time: iso.split('T')[1]?.replace('Z', '') ?? '',
+      open: Number.isFinite(bar.o) ? bar.o : null,
+      high: Number.isFinite(bar.h) ? bar.h : null,
+      low: Number.isFinite(bar.l) ? bar.l : null,
+      close: Number.isFinite(bar.c) ? bar.c : null,
+      volume: Number.isFinite(bar.v ?? NaN) ? bar.v ?? null : null,
+    }
+  })
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
@@ -374,86 +513,42 @@ Deno.serve(async (req) => {
       )
     }
 
-    const fetchPolygon = createRateLimitedFetcher()
-    const results: PolygonAggsResult[] = []
-
-    let cursor: string | null = null
-    let url = buildPolygonUrl(
-      polygonSymbol,
-      intervalConfig.multiplier,
-      intervalConfig.timeframe,
-      fromDate,
-      toDate,
-      polygonApiKey,
-      cursor,
-    )
-
-    while (url) {
-      const polygonResponse = await fetchPolygon(url)
-      if (!polygonResponse.ok) {
-        const errorBody = await polygonResponse.text()
-        throw new Error(`Polygon API error (${polygonResponse.status}): ${errorBody}`)
-      }
-
-      const polygonData = (await polygonResponse.json()) as PolygonAggsResponse
-      if (polygonData.error || polygonData.message) {
-        throw new Error(`Polygon API error: ${polygonData.error ?? polygonData.message}`)
-      }
-
-      if (polygonData.results && polygonData.results.length > 0) {
-        results.push(...polygonData.results)
-      }
-
-      if (polygonData.next_url) {
-        const nextUrl = new URL(polygonData.next_url)
-        cursor = nextUrl.searchParams.get('cursor')
-        url = cursor
-          ? buildPolygonUrl(
-              polygonSymbol,
-              intervalConfig.multiplier,
-              intervalConfig.timeframe,
-              fromDate,
-              toDate,
-              polygonApiKey,
-              cursor,
-            )
-          : null
-      } else {
-        url = null
-      }
+    const polygonClient: PolygonClient = {
+      async getAggs(sym, resolution, from, to) {
+        const intervalKey = normalizeIntervalKey(resolution)
+        const cfg = INTERVAL_MAP.get(intervalKey)
+        if (!cfg) {
+          throw new PolygonApiError(400, `Unsupported interval: ${resolution}`)
+        }
+        return fetchPolygonAggs(sym, intervalKey, cfg, from, to, polygonApiKey)
+      },
     }
 
-    if (results.length === 0) {
+    const fallback = sharedFinnhubClient
+      ? new BarsFallback({ polygonClient, finnhubClient: sharedFinnhubClient, maxRetries: 3, backoffMsInitial: 750 })
+      : null
+
+    const barsResult = fallback
+      ? await fallback.getBars(polygonSymbol, fromDate, toDate, interval)
+      : {
+          bars: polygonAggsToBars(await polygonClient.getAggs(polygonSymbol, interval, fromDate, toDate)),
+          provider: 'polygon' as const,
+        }
+
+    if (!barsResult.bars.length) {
       return new Response(
-        JSON.stringify({ error: 'No intraday data available from Polygon' }),
+        JSON.stringify({ error: `No intraday data available from ${barsResult.provider}` }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    const filteredResults = cutoffTimestamp
-      ? results.filter((item) => item.t >= cutoffTimestamp)
-      : results
+    const intradayData = mapBarsToIntradayPoints(barsResult.bars, cutoffTimestamp)
 
-    const intradayData = filteredResults.map<IntradayPoint>((item) => {
-      const date = new Date(item.t)
-      const iso = date.toISOString()
-      return {
-        datetime: iso,
-        date: iso.split('T')[0],
-        time: iso.split('T')[1]?.replace('Z', '') ?? '',
-        open: item.o ?? null,
-        high: item.h ?? null,
-        low: item.l ?? null,
-        close: item.c ?? null,
-        volume: item.v ?? null,
-      }
-    })
-
-    console.log(`Polygon returned ${intradayData.length} intraday points for ${symbol}`)
+    console.log(`[Edge] ${barsResult.provider} returned ${intradayData.length} intraday points for ${symbol}`)
 
     await writeCache(cacheKey, {
       data: intradayData,
-      source: 'polygon',
+      source: barsResult.provider,
       interval,
       symbol: polygonSymbol,
       range,
@@ -463,7 +558,7 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         data: intradayData,
-        source: 'polygon',
+        source: barsResult.provider,
         interval,
         symbol: polygonSymbol,
       }),
