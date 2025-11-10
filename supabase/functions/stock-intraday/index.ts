@@ -1,6 +1,6 @@
 import { supabaseAdmin } from '../_shared/supabaseAdminClient.ts'
 import { FinnhubClient } from '../../../services/finnhub.ts'
-import { BarsFallback } from '../../../services/polygonFallback.ts'
+import { BarsFallback, fetchNormalizedFinnhubBars } from '../../../services/polygonFallback.ts'
 import type { Bar as FallbackBar } from '../../../services/polygonFallback.ts'
 import type { PolygonClient } from '../../../services/polygon.ts'
 
@@ -524,31 +524,91 @@ Deno.serve(async (req) => {
       },
     }
 
-    const fallback = sharedFinnhubClient
-      ? new BarsFallback({ polygonClient, finnhubClient: sharedFinnhubClient, maxRetries: 3, backoffMsInitial: 750 })
-      : null
+    let bars: FallbackBar[] = []
+    let providerLabel = 'polygon'
 
-    const barsResult = fallback
-      ? await fallback.getBars(polygonSymbol, fromDate, toDate, interval)
-      : {
-          bars: polygonAggsToBars(await polygonClient.getAggs(polygonSymbol, interval, fromDate, toDate)),
-          provider: 'polygon' as const,
+    if (sharedFinnhubClient) {
+      const finnhubStartDate = new Date(endDate)
+      finnhubStartDate.setFullYear(finnhubStartDate.getFullYear() - 1)
+      const finnhubFromDate = finnhubStartDate.toISOString().split('T')[0]
+
+      let finnhubBars: FallbackBar[] = []
+      try {
+        finnhubBars = await fetchNormalizedFinnhubBars({
+          finnhubClient: sharedFinnhubClient,
+          symbol: polygonSymbol,
+          from: finnhubFromDate,
+          to: toDate,
+          resolution: interval,
+        })
+      } catch (error) {
+        console.error(`[Edge] Finnhub primary fetch failed for ${polygonSymbol}`, error)
+      }
+
+      if (finnhubBars.length === 0) {
+        console.warn(`[Edge] Finnhub returned no intraday bars for ${polygonSymbol}, attempting Polygon fallback`)
+        const fallback = new BarsFallback({
+          polygonClient,
+          finnhubClient: sharedFinnhubClient,
+          maxRetries: 3,
+          backoffMsInitial: 750,
+        })
+        const fallbackResult = await fallback.getBars(polygonSymbol, fromDate, toDate, interval)
+        bars = fallbackResult.bars
+        providerLabel = fallbackResult.provider
+      } else {
+        providerLabel = 'finnhub'
+        bars = finnhubBars
+
+        if (startDate < finnhubStartDate) {
+          const polygonSegmentFrom = startDate.toISOString().split('T')[0]
+          const polygonSegmentTo = finnhubStartDate.toISOString().split('T')[0]
+          try {
+            const polygonSegmentAggs = await polygonClient.getAggs(
+              polygonSymbol,
+              interval,
+              polygonSegmentFrom,
+              polygonSegmentTo,
+            )
+            const polygonSegmentBars = polygonAggsToBars(polygonSegmentAggs).filter(
+              (bar) => bar.t < finnhubStartDate.getTime(),
+            )
+            if (polygonSegmentBars.length) {
+              const merged = new Map<number, FallbackBar>()
+              for (const bar of polygonSegmentBars) {
+                merged.set(bar.t, bar)
+              }
+              for (const bar of finnhubBars) {
+                merged.set(bar.t, bar)
+              }
+              bars = Array.from(merged.values()).sort((a, b) => a.t - b.t)
+              providerLabel = 'finnhub+polygon'
+            }
+          } catch (error) {
+            console.warn(`[Edge] Polygon extended history fetch failed for ${polygonSymbol}`, error)
+          }
         }
+      }
+    } else {
+      const polygonAggs = await polygonClient.getAggs(polygonSymbol, interval, fromDate, toDate)
+      bars = polygonAggsToBars(polygonAggs)
+      providerLabel = 'polygon'
+    }
 
-    if (!barsResult.bars.length) {
+    if (!bars.length) {
       return new Response(
-        JSON.stringify({ error: `No intraday data available from ${barsResult.provider}` }),
+        JSON.stringify({ error: 'No intraday data available' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
 
-    const intradayData = mapBarsToIntradayPoints(barsResult.bars, cutoffTimestamp)
+    const intradayData = mapBarsToIntradayPoints(bars, cutoffTimestamp)
 
-    console.log(`[Edge] ${barsResult.provider} returned ${intradayData.length} intraday points for ${symbol}`)
+    console.log(`[Edge] ${providerLabel} returned ${intradayData.length} intraday points for ${symbol}`)
 
     await writeCache(cacheKey, {
       data: intradayData,
-      source: barsResult.provider,
+      source: providerLabel,
       interval,
       symbol: polygonSymbol,
       range,
@@ -558,7 +618,7 @@ Deno.serve(async (req) => {
     return new Response(
       JSON.stringify({
         data: intradayData,
-        source: barsResult.provider,
+        source: providerLabel,
         interval,
         symbol: polygonSymbol,
       }),

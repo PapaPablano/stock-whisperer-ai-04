@@ -111,7 +111,7 @@ export class BarsFallback {
 
 export default BarsFallback;
 
-const normalizeResolution = (resolution: string): string => {
+export const normalizeResolution = (resolution: string): string => {
   if (!resolution) return "1m";
   const value = resolution.toLowerCase();
   switch (value) {
@@ -147,7 +147,7 @@ const normalizeResolution = (resolution: string): string => {
   }
 };
 
-const toFinnhubResolution = (resolution: string): "1" | "5" | "15" | "30" | "60" | "D" | "W" | "M" => {
+export const toFinnhubResolution = (resolution: string): "1" | "5" | "15" | "30" | "60" | "D" | "W" | "M" => {
   switch (resolution) {
     case "1m":
       return "1";
@@ -170,7 +170,7 @@ const toFinnhubResolution = (resolution: string): "1" | "5" | "15" | "30" | "60"
   }
 };
 
-const aggregateFinnhubBars = (bars: FinnhubBar[], resolution: string): FinnhubBar[] => {
+export const aggregateFinnhubBars = (bars: FinnhubBar[], resolution: string): FinnhubBar[] => {
   const normalized = normalizeResolution(resolution);
   if (normalized === "1m") {
     return bars;
@@ -219,4 +219,30 @@ const aggregateFinnhubBars = (bars: FinnhubBar[], resolution: string): FinnhubBa
   }
 
   return aggregated;
+};
+
+export const fetchNormalizedFinnhubBars = async (params: {
+  finnhubClient: FinnhubClient;
+  symbol: string;
+  from: string;
+  to: string;
+  resolution: string;
+}): Promise<Bar[]> => {
+  const normalizedResolution = normalizeResolution(params.resolution);
+  const finnhubResolution = toFinnhubResolution(normalizedResolution);
+  const result = await params.finnhubClient.getBars({
+    symbol: params.symbol,
+    from: params.from,
+    to: params.to,
+    resolution: finnhubResolution,
+  });
+  const aggregated = aggregateFinnhubBars(result, normalizedResolution);
+  return aggregated.map((bar) => ({
+    t: bar.t,
+    o: bar.o,
+    h: bar.h,
+    l: bar.l,
+    c: bar.c,
+    v: bar.v,
+  }));
 };
