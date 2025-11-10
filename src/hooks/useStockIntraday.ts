@@ -19,10 +19,15 @@ export interface IntradayResponse {
   symbol: string;
 }
 
+interface UseStockIntradayOptions {
+  enabled?: boolean;
+}
+
 export const useStockIntraday = (
-  symbol: string, 
+  symbol: string,
   interval: '1min' | '5min' | '15min' | '30min' | '1hour' = '1min',
-  range: '1d' | '5d' | '1w' = '1d'
+  range: '1d' | '5d' | '1w' = '1d',
+  options?: UseStockIntradayOptions,
 ) => {
   return useQuery({
     queryKey: ['stock-intraday', symbol, interval, range],
@@ -34,7 +39,7 @@ export const useStockIntraday = (
       if (error) throw error;
       return data as IntradayResponse;
     },
-    enabled: !!symbol,
+    enabled: !!symbol && (options?.enabled ?? true),
     staleTime: 30 * 1000, // Consider data fresh for 30 seconds (real-time data)
     refetchInterval: 60 * 1000, // Refetch every minute for real-time updates
   });
