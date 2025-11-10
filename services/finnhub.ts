@@ -22,6 +22,7 @@ export type FinnhubQuote = {
 
 export type FinnhubParams = {
   apiKey: string;
+  apiSecret?: string;
   baseUrl?: string;
   cacheTtlMs?: number;
   requestDedup?: boolean;
@@ -58,6 +59,7 @@ type FinnhubWsMessage = {
 
 export class FinnhubClient {
   private apiKey: string;
+  private apiSecret?: string;
   private baseUrl: string;
   private cacheTtlMs: number;
   private requestDedup: boolean;
@@ -68,6 +70,7 @@ export class FinnhubClient {
 
   constructor(params: FinnhubParams) {
     this.apiKey = params.apiKey;
+    this.apiSecret = params.apiSecret;
     this.baseUrl = params.baseUrl ?? DEFAULT_BASE_URL;
     this.cacheTtlMs = params.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
     this.requestDedup = params.requestDedup ?? true;
@@ -140,7 +143,7 @@ export class FinnhubClient {
     url.searchParams.set("to", this.dateToUnixSeconds(req.to).toString());
     url.searchParams.set("token", this.apiKey);
 
-    const response = await fetch(url.toString());
+    const response = await fetch(url.toString(), { headers: this.createHeaders() });
 
     if (!response.ok) {
       const text = await response.text();
@@ -212,7 +215,7 @@ export class FinnhubClient {
     url.searchParams.set("symbol", symbol);
     url.searchParams.set("token", this.apiKey);
 
-    const response = await fetch(url.toString());
+    const response = await fetch(url.toString(), { headers: this.createHeaders() });
 
     if (!response.ok) {
       const text = await response.text();
@@ -296,6 +299,15 @@ export class FinnhubClient {
 
   private dateToUnixSeconds(dateStr: string): number {
     return Math.floor(new Date(`${dateStr}T00:00:00Z`).getTime() / 1000);
+  }
+
+  private createHeaders(): Headers {
+    const headers = new Headers();
+    headers.set("X-Finnhub-Token", this.apiKey);
+    if (this.apiSecret) {
+      headers.set("X-Finnhub-Secret", this.apiSecret);
+    }
+    return headers;
   }
 }
 
