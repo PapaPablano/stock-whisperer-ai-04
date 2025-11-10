@@ -56,6 +56,9 @@ export const PriceChart = ({ symbol, data, selectedRange, onRangeChange }: Price
               <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
               <XAxis 
                 dataKey="date" 
+                type="category"
+                scale="point"
+                allowDuplicatedCategory={false}
                 className="text-xs"
                 tick={{ fill: "hsl(var(--muted-foreground))" }}
               />

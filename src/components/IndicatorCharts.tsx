@@ -42,6 +42,9 @@ export function RSIChart({ data }: RSIChartProps) {
             <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
             <XAxis
               dataKey="date"
+              type="category"
+              scale="point"
+              allowDuplicatedCategory={false}
               tick={{ fill: '#9ca3af', fontSize: 10 }}
               height={30}
               angle={-45}
@@ -121,6 +124,9 @@ export function MACDChart({ data }: MACDChartProps) {
             <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
             <XAxis
               dataKey="date"
+              type="category"
+              scale="point"
+              allowDuplicatedCategory={false}
               tick={{ fill: '#9ca3af', fontSize: 10 }}
               height={30}
               angle={-45}
@@ -193,6 +199,9 @@ export function StochasticChart({ data }: StochasticChartProps) {
             <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
             <XAxis
               dataKey="date"
+              type="category"
+              scale="point"
+              allowDuplicatedCategory={false}
               tick={{ fill: '#9ca3af', fontSize: 10 }}
               height={30}
               angle={-45}
@@ -281,6 +290,9 @@ export function KDJChart({ data }: KDJChartProps) {
             <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
             <XAxis
               dataKey="date"
+              type="category"
+              scale="point"
+              allowDuplicatedCategory={false}
               tick={{ fill: '#9ca3af', fontSize: 10 }}
               height={30}
               angle={-45}
@@ -378,6 +390,9 @@ export function VolumeIndicatorChart({ data, title, color = '#3b82f6' }: VolumeI
             <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
             <XAxis
               dataKey="date"
+              type="category"
+              scale="point"
+              allowDuplicatedCategory={false}
               tick={{ fill: '#9ca3af', fontSize: 10 }}
               height={30}
               angle={-45}
