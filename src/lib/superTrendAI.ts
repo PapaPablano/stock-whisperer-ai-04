@@ -336,6 +336,10 @@ const kMeans1D = (
     for (let j = 0; j < centroids.length; j++) {
       if (clusterCounts[j] > 0) {
         centroids[j] = clusterSums[j] / clusterCounts[j];
+      } else {
+        const randomIndex = Math.floor(Math.random() * values.length);
+        centroids[j] = values[randomIndex];
+        changed = true;
       }
     }
 
