@@ -444,25 +444,25 @@ export const calculateSuperTrendAI = (
   const config = { ...DEFAULT_OPTIONS, ...options };
 
   if (!data || data.length === 0) {
-    return {
-      series: [],
-      info: {
-        targetFactor: config.minMultiplier,
-        performanceIndex: 0,
-        clusterDiagnostics: {},
-        clusterMapping: {},
-        clusterDispersions: {},
-        signalMetrics: [],
-        clusters: {},
-        perfClusters: {},
-        factorsTested: [],
-        fromCluster: config.fromCluster,
-      },
-    };
+    return createEmptyResult(config);
   }
 
-  const atr = calculateATR(data, config.atrLength);
+  const dataOffset = Math.max(0, data.length - config.maxData);
+  const dataSlice = data.slice(dataOffset);
+
+  if (dataSlice.length === 0 || dataSlice.length <= config.atrLength) {
+    return createEmptyResult(config, dataOffset);
+  }
+
+  const atr = calculateATR(dataSlice, config.atrLength);
+  if (atr.length === 0) {
+    return createEmptyResult(config, dataOffset);
+  }
+
   const factors = generateFactors(config.minMultiplier, config.maxMultiplier, config.step);
+  if (factors.length === 0) {
+    return createEmptyResult(config, dataOffset);
+  }
 
   const performances: number[] = [];
   const supertrendsByFactor: number[][] = [];
