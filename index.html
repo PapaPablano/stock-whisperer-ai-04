@@ -7,6 +7,23 @@
     <meta name="description" content="Professional stock analysis platform with real-time data, technical indicators, and ML-powered predictions for data-driven investing" />
     <meta name="author" content="StockML Analytics" />
 
+    <script>
+      (function() {
+        try {
+          var storedTheme = localStorage.getItem("theme");
+          var prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var theme = storedTheme === "light" || storedTheme === "dark" ? storedTheme : prefersDark ? "dark" : "light";
+          if (theme === "dark") {
+            document.documentElement.classList.add("dark");
+          } else {
+            document.documentElement.classList.remove("dark");
+          }
+        } catch (error) {
+          document.documentElement.classList.add("dark");
+        }
+      })();
+    </script>
+
     <meta property="og:title" content="StockML Analytics - Advanced Stock Analysis Dashboard" />
     <meta property="og:description" content="Professional stock analysis platform with real-time data, technical indicators, and ML-powered predictions" />
     <meta property="og:type" content="website" />
