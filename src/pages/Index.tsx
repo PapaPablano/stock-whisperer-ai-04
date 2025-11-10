@@ -79,11 +79,15 @@ const Index = () => {
     }
     
     // Ensure dates are in consistent format
-    console.log(`Using real API data: ${historicalData.length} data points`);
-    return historicalData.map(item => ({
+    const formattedData = historicalData.map(item => ({
       ...item,
       date: typeof item.date === 'string' ? item.date.split('T')[0] : item.date,
     }));
+    
+    console.log(`Using real API data: ${historicalData.length} data points`);
+    console.log(`Date range in data: ${formattedData[0]?.date} to ${formattedData[formattedData.length - 1]?.date}`);
+    
+    return formattedData;
   }, [historicalData, dateRange]);
 
   // Format data for PriceChart component (simplified format)

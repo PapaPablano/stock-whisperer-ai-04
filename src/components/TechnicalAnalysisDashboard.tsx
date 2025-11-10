@@ -56,6 +56,9 @@ export function TechnicalAnalysisDashboard({ symbol, data }: TechnicalAnalysisDa
       };
     }
 
+    console.log(`[TechnicalAnalysisDashboard] Received ${data.length} data points`);
+    console.log(`[TechnicalAnalysisDashboard] Date range: ${data[0]?.date} to ${data[data.length - 1]?.date}`);
+
     const closes = data.map(d => d.close);
     const volumes = data.map(d => d.volume);
     
