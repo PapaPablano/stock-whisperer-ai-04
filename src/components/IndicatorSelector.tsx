@@ -39,6 +39,27 @@ export interface IndicatorConfig {
   adx?: boolean;
 }
 
+export const DEFAULT_INDICATOR_CONFIG: IndicatorConfig = Object.freeze({
+  sma20: false,
+  sma50: false,
+  sma200: false,
+  ema12: false,
+  ema26: false,
+  ema50: false,
+  supertrendAI: true,
+  rsi: true,
+  macd: true,
+  stochastic: false,
+  kdj: false,
+  bollingerBands: false,
+  atr: false,
+  keltnerChannel: false,
+  obv: false,
+  vroc: false,
+  mfi: false,
+  adx: false,
+});
+
 interface IndicatorSelectorProps {
   selectedIndicators: IndicatorConfig;
   onChange: (indicators: IndicatorConfig) => void;

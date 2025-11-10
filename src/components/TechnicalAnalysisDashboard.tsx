@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { IndicatorSelector, type IndicatorConfig } from './IndicatorSelector';
+import { useMemo, useState } from 'react';
+import { IndicatorSelector, DEFAULT_INDICATOR_CONFIG, type IndicatorConfig } from './IndicatorSelector';
 import { RSIChart, MACDChart, StochasticChart, KDJChart, VolumeIndicatorChart, SuperTrendAIChart } from './IndicatorCharts';
 import {
   calculateRSI,
@@ -16,6 +16,7 @@ import {
 import {
   calculateSuperTrendAI,
   type SuperTrendAIInfo,
+  type SuperTrendAIResult,
   type TrendDirection,
 } from '../lib/superTrendAI';
 
@@ -37,30 +38,29 @@ interface TechnicalAnalysisDashboardProps {
   symbol: string;
   data: PriceData[]; // Full dataset for calculations
   displayData?: PriceData[]; // Optional filtered dataset for display
+  selectedIndicators?: IndicatorConfig;
+  onSelectedIndicatorsChange?: (indicators: IndicatorConfig) => void;
+  supertrendAIResult?: SuperTrendAIResult | null;
 }
 
-export function TechnicalAnalysisDashboard({ symbol, data, displayData }: TechnicalAnalysisDashboardProps) {
+export function TechnicalAnalysisDashboard({
+  symbol,
+  data,
+  displayData,
+  selectedIndicators,
+  onSelectedIndicatorsChange,
+  supertrendAIResult,
+}: TechnicalAnalysisDashboardProps) {
+  const [internalIndicators, setInternalIndicators] = useState<IndicatorConfig>(() => ({
+    ...DEFAULT_INDICATOR_CONFIG,
+  }));
+
   // Use displayData if provided, otherwise use full data (backward compatible)
   const dataForDisplay = displayData || data;
-  const [selectedIndicators, setSelectedIndicators] = useState<IndicatorConfig>({
-    sma20: true,
-    sma50: false,
-    sma200: false,
-    ema12: false,
-    ema26: false,
-    ema50: false,
-    supertrendAI: true,
-    rsi: true,
-    macd: true,
-    stochastic: false,
-    kdj: false,
-    bollingerBands: false,
-    atr: false,
-    keltnerChannel: false,
-    obv: false,
-    vroc: false,
-    mfi: false,
-    adx: false,
+
+  const indicators = selectedIndicators ?? internalIndicators;
+  const handleIndicatorsChange = onSelectedIndicatorsChange ?? ((config: IndicatorConfig) => {
+    setInternalIndicators(config);
   });
 
   // Calculate indicators based on selection
@@ -102,29 +102,29 @@ export function TechnicalAnalysisDashboard({ symbol, data, displayData }: Techni
     const volumes = data.map(d => d.volume);
     
     // RSI - calculated on full data
-    const rsiRaw = selectedIndicators.rsi ? calculateRSI(closes, 14) : [];
+    const rsiRaw = indicators.rsi ? calculateRSI(closes, 14) : [];
     
     // MACD - calculated on full data
-    const macdRaw = selectedIndicators.macd ? calculateMACD(closes, 12, 26, 9) : null;
+    const macdRaw = indicators.macd ? calculateMACD(closes, 12, 26, 9) : null;
     
     // Stochastic - calculated on full data
-    const stochasticRaw = selectedIndicators.stochastic
+    const stochasticRaw = indicators.stochastic
       ? calculateStochastic(data, 14, 3)
       : null;
     
     // KDJ - calculated on full data
-    const kdjRaw = selectedIndicators.kdj
+    const kdjRaw = indicators.kdj
       ? calculateKDJ(data, 9, 3, 3)
       : null;
     
     // Volume indicators - calculated on full data
-    const obvRaw = selectedIndicators.obv ? calculateOBV(data) : [];
-    const vrocRaw = selectedIndicators.vroc ? calculateVROC(volumes, 14) : [];
-    const mfiRaw = selectedIndicators.mfi ? calculateMFI(data, 14) : [];
+    const obvRaw = indicators.obv ? calculateOBV(data) : [];
+    const vrocRaw = indicators.vroc ? calculateVROC(volumes, 14) : [];
+    const mfiRaw = indicators.mfi ? calculateMFI(data, 14) : [];
     
     // Volatility indicators - calculated on full data
-    const atrRaw = selectedIndicators.atr ? calculateATR(data, 14) : [];
-    const adxRaw = selectedIndicators.adx ? calculateADX(data, 14) : [];
+    const atrRaw = indicators.atr ? calculateATR(data, 14) : [];
+    const adxRaw = indicators.adx ? calculateADX(data, 14) : [];
     
     // Now filter calculated results to match display range
     // Create a map of dates from displayData for efficient lookup
@@ -146,13 +146,13 @@ export function TechnicalAnalysisDashboard({ symbol, data, displayData }: Techni
     
     console.log(`[TechnicalAnalysisDashboard] Filtered ${filteredIndices.length} indicator data points for display`);
     
-    const supertrendAIResult = selectedIndicators.supertrendAI
-      ? calculateSuperTrendAI(data)
+    const resolvedSupertrend = indicators.supertrendAI
+      ? supertrendAIResult ?? calculateSuperTrendAI(data)
       : null;
 
-    const supertrendAISeries = supertrendAIResult
+    const supertrendAISeries = resolvedSupertrend
       ? filteredIndices.map((i) => {
-          const rawPoint = supertrendAIResult.series[i];
+          const rawPoint = resolvedSupertrend.series[i];
           if (!rawPoint) {
             return null;
           }
@@ -235,10 +235,10 @@ export function TechnicalAnalysisDashboard({ symbol, data, displayData }: Techni
       })),
       supertrendAI: {
         series: supertrendAISeries,
-        info: supertrendAIResult?.info ?? null,
+        info: resolvedSupertrend?.info ?? null,
       },
     };
-  }, [data, dataForDisplay, selectedIndicators]);
+  }, [data, dataForDisplay, indicators, supertrendAIResult]);
 
   return (
     <div className="space-y-6">
@@ -246,32 +246,32 @@ export function TechnicalAnalysisDashboard({ symbol, data, displayData }: Techni
         {/* Indicator Selector */}
         <div className="lg:col-span-1">
           <IndicatorSelector
-            selectedIndicators={selectedIndicators}
-            onChange={setSelectedIndicators}
+            selectedIndicators={indicators}
+            onChange={handleIndicatorsChange}
           />
         </div>
 
         {/* Indicator Charts */}
         <div className="lg:col-span-3 space-y-6">
           {/* Momentum Indicators */}
-          {selectedIndicators.rsi && indicatorData.rsi.length > 0 && (
+          {indicators.rsi && indicatorData.rsi.length > 0 && (
             <RSIChart data={indicatorData.rsi} />
           )}
           
-          {selectedIndicators.macd && indicatorData.macd.length > 0 && (
+          {indicators.macd && indicatorData.macd.length > 0 && (
             <MACDChart data={indicatorData.macd} />
           )}
           
-          {selectedIndicators.stochastic && indicatorData.stochastic.length > 0 && (
+          {indicators.stochastic && indicatorData.stochastic.length > 0 && (
             <StochasticChart data={indicatorData.stochastic} />
           )}
           
-          {selectedIndicators.kdj && indicatorData.kdj.length > 0 && (
+          {indicators.kdj && indicatorData.kdj.length > 0 && (
             <KDJChart data={indicatorData.kdj} />
           )}
 
           {/* Volume Indicators */}
-          {selectedIndicators.obv && indicatorData.obv.length > 0 && (
+          {indicators.obv && indicatorData.obv.length > 0 && (
             <VolumeIndicatorChart
               data={indicatorData.obv}
               title="OBV - On-Balance Volume"
@@ -279,7 +279,7 @@ export function TechnicalAnalysisDashboard({ symbol, data, displayData }: Techni
             />
           )}
           
-          {selectedIndicators.vroc && indicatorData.vroc.length > 0 && (
+          {indicators.vroc && indicatorData.vroc.length > 0 && (
             <VolumeIndicatorChart
               data={indicatorData.vroc}
               title="VROC (14) - Volume Rate of Change"
@@ -287,7 +287,7 @@ export function TechnicalAnalysisDashboard({ symbol, data, displayData }: Techni
             />
           )}
           
-          {selectedIndicators.mfi && indicatorData.mfi.length > 0 && (
+          {indicators.mfi && indicatorData.mfi.length > 0 && (
             <VolumeIndicatorChart
               data={indicatorData.mfi}
               title="MFI (14) - Money Flow Index"
@@ -296,7 +296,7 @@ export function TechnicalAnalysisDashboard({ symbol, data, displayData }: Techni
           )}
 
           {/* Volatility Indicators */}
-          {selectedIndicators.atr && indicatorData.atr.length > 0 && (
+          {indicators.atr && indicatorData.atr.length > 0 && (
             <VolumeIndicatorChart
               data={indicatorData.atr}
               title="ATR (14) - Average True Range"
@@ -304,7 +304,7 @@ export function TechnicalAnalysisDashboard({ symbol, data, displayData }: Techni
             />
           )}
           
-          {selectedIndicators.adx && indicatorData.adx.length > 0 && (
+          {indicators.adx && indicatorData.adx.length > 0 && (
             <VolumeIndicatorChart
               data={indicatorData.adx}
               title="ADX (14) - Average Directional Index"
@@ -312,7 +312,7 @@ export function TechnicalAnalysisDashboard({ symbol, data, displayData }: Techni
             />
           )}
 
-          {selectedIndicators.supertrendAI && indicatorData.supertrendAI.series.length > 0 && (
+          {indicators.supertrendAI && indicatorData.supertrendAI.series.length > 0 && (
             <SuperTrendAIChart
               data={indicatorData.supertrendAI.series}
               meta={indicatorData.supertrendAI.info}
@@ -321,15 +321,15 @@ export function TechnicalAnalysisDashboard({ symbol, data, displayData }: Techni
           )}
 
           {/* Show message if no indicators selected */}
-          {!selectedIndicators.rsi && 
-           !selectedIndicators.macd && 
-           !selectedIndicators.stochastic && 
-           !selectedIndicators.kdj &&
-           !selectedIndicators.obv && 
-           !selectedIndicators.vroc && 
-           !selectedIndicators.mfi && 
-           !selectedIndicators.atr && 
-           !selectedIndicators.adx && (
+          {!indicators.rsi && 
+           !indicators.macd && 
+           !indicators.stochastic && 
+           !indicators.kdj &&
+           !indicators.obv && 
+           !indicators.vroc && 
+           !indicators.mfi && 
+           !indicators.atr && 
+           !indicators.adx && (
             <div className="text-center py-12 text-muted-foreground">
               <p className="text-lg">Select indicators from the left to display charts</p>
             </div>
