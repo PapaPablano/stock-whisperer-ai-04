@@ -553,7 +553,6 @@ export function SuperTrendAIChart({ data, meta, symbol }: SuperTrendAIChartProps
               strokeWidth={3}
               dot={false}
               name="SuperTrend (Bullish)"
-              connectNulls
             />
             <Line
               type="monotone"
@@ -562,7 +561,6 @@ export function SuperTrendAIChart({ data, meta, symbol }: SuperTrendAIChartProps
               strokeWidth={3}
               dot={false}
               name="SuperTrend (Bearish)"
-              connectNulls
             />
             <Line
               type="monotone"
