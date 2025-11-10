@@ -98,22 +98,60 @@ const DEFAULT_OPTIONS: Required<SuperTrendAIOptions> = {
   fromCluster: "Best",
   maxIter: 1000,
   maxData: 10000,
+  snapToGrid: false,
+  confirmBars: 0,
+  returnAllFactors: false,
 };
+
+const createEmptyResult = (
+  config: Required<SuperTrendAIOptions>,
+  dataOffset: number = 0,
+): SuperTrendAIResult => ({
+  series: [],
+  info: {
+    targetFactor: config.minMultiplier,
+    performanceIndex: 0,
+    clusterDiagnostics: {},
+    clusterMapping: {},
+    clusterDispersions: {},
+    signalMetrics: [],
+    clusters: {},
+    perfClusters: {},
+    factorsTested: [],
+    fromCluster: config.fromCluster,
+    selectedClusterId: null,
+    selectedClusterLabel: null,
+    rawPerformanceIndex: 0,
+    dataOffset,
+    regimeMetrics: {
+      averageTrendRun: 0,
+      churnRate: 0,
+    },
+    confirmBars: config.confirmBars,
+    allFactorAnalytics: config.returnAllFactors ? [] : undefined,
+  },
+});
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
-const ema = (values: number[], span: number, seed?: number): number[] => {
+const ema = (values: number[], span: number, seed?: number, alphaOverride?: number): number[] => {
   if (values.length === 0) {
     return [];
   }
 
-  const alpha = 2 / (span + 1);
+  const computedAlpha = span <= 0 ? 1 : 2 / (span + 1);
+  const alpha = clamp(alphaOverride ?? computedAlpha, 0.001, 1);
   const result: number[] = [];
-  let current = seed ?? values[0];
+  const initialCandidate =
+    typeof seed === "number" && Number.isFinite(seed)
+      ? seed
+      : values.find((val) => Number.isFinite(val)) ?? 0;
+  let current = initialCandidate;
   result.push(current);
 
   for (let i = 1; i < values.length; i++) {
-    current = alpha * values[i] + (1 - alpha) * current;
+    const value = Number.isFinite(values[i]) ? values[i] : current;
+    current = alpha * value + (1 - alpha) * current;
     result.push(current);
   }
 
