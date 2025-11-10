@@ -166,16 +166,20 @@ const calculateATR = (data: PriceData[], span: number): number[] => {
   const trueRanges: number[] = [];
 
   for (let i = 0; i < data.length; i++) {
-    const high = data[i].high;
-    const low = data[i].low;
-    const close = data[i].close;
-    const prevClose = i > 0 ? data[i - 1].close : close;
+    const current = data[i];
+    const previous = i > 0 ? data[i - 1] : current;
+
+    const high = Number.isFinite(current.high) ? current.high : current.close;
+    const low = Number.isFinite(current.low) ? current.low : current.close;
+    const close = Number.isFinite(current.close) ? current.close : previous.close;
+    const prevClose = Number.isFinite(previous.close) ? previous.close : close;
 
     const tr1 = high - low;
     const tr2 = Math.abs(high - prevClose);
     const tr3 = Math.abs(low - prevClose);
+    const trueRange = Math.max(tr1, tr2, tr3);
 
-    trueRanges.push(Math.max(tr1, tr2, tr3));
+    trueRanges.push(Number.isFinite(trueRange) ? trueRange : 0);
   }
 
   return ema(trueRanges, span);
