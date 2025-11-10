@@ -14,7 +14,7 @@ import {
   ReferenceLine,
   ReferenceArea,
 } from 'recharts';
-import type { SuperTrendAIInfo, TrendDirection } from '@/lib/superTrendAI';
+import type { SuperTrendAIInfo, TrendDirection } from '../lib/superTrendAI';
 
 // Utility function to calculate appropriate X-axis tick interval based on data length
 // This ensures readable date labels regardless of the selected time range

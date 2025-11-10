@@ -17,7 +17,7 @@ import {
   calculateSuperTrendAI,
   type SuperTrendAIInfo,
   type TrendDirection,
-} from '@/lib/superTrendAI';
+} from '../lib/superTrendAI';
 
 type SuperTrendAIChartPoint = {
   date: string;
