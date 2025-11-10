@@ -16,10 +16,13 @@ import {
 
 interface TechnicalAnalysisDashboardProps {
   symbol: string;
-  data: PriceData[];
+  data: PriceData[]; // Full dataset for calculations
+  displayData?: PriceData[]; // Optional filtered dataset for display
 }
 
-export function TechnicalAnalysisDashboard({ symbol, data }: TechnicalAnalysisDashboardProps) {
+export function TechnicalAnalysisDashboard({ symbol, data, displayData }: TechnicalAnalysisDashboardProps) {
+  // Use displayData if provided, otherwise use full data (backward compatible)
+  const dataForDisplay = displayData || data;
   const [selectedIndicators, setSelectedIndicators] = useState<IndicatorConfig>({
     sma20: true,
     sma50: false,
@@ -56,36 +59,41 @@ export function TechnicalAnalysisDashboard({ symbol, data }: TechnicalAnalysisDa
       };
     }
 
-    console.log(`[TechnicalAnalysisDashboard] Received ${data.length} data points`);
-    console.log(`[TechnicalAnalysisDashboard] Date range: ${data[0]?.date} to ${data[data.length - 1]?.date}`);
+    console.log(`[TechnicalAnalysisDashboard] Calculation data: ${data.length} points (${data[0]?.date} to ${data[data.length - 1]?.date})`);
+    console.log(`[TechnicalAnalysisDashboard] Display data: ${dataForDisplay.length} points (${dataForDisplay[0]?.date} to ${dataForDisplay[dataForDisplay.length - 1]?.date})`);
 
+    // Calculate indicators on FULL dataset for accuracy
     const closes = data.map(d => d.close);
     const volumes = data.map(d => d.volume);
     
-    // RSI
-    const rsi = selectedIndicators.rsi ? calculateRSI(closes, 14) : [];
+    // RSI - calculated on full data
+    const rsiRaw = selectedIndicators.rsi ? calculateRSI(closes, 14) : [];
     
-    // MACD
-    const macd = selectedIndicators.macd ? calculateMACD(closes, 12, 26, 9) : null;
+    // MACD - calculated on full data
+    const macdRaw = selectedIndicators.macd ? calculateMACD(closes, 12, 26, 9) : null;
     
-    // Stochastic
-    const stochastic = selectedIndicators.stochastic
+    // Stochastic - calculated on full data
+    const stochasticRaw = selectedIndicators.stochastic
       ? calculateStochastic(data, 14, 3)
       : null;
     
-    // KDJ
-    const kdj = selectedIndicators.kdj
+    // KDJ - calculated on full data
+    const kdjRaw = selectedIndicators.kdj
       ? calculateKDJ(data, 9, 3, 3)
       : null;
     
-    // Volume indicators
-    const obv = selectedIndicators.obv ? calculateOBV(data) : [];
-    const vroc = selectedIndicators.vroc ? calculateVROC(volumes, 14) : [];
-    const mfi = selectedIndicators.mfi ? calculateMFI(data, 14) : [];
+    // Volume indicators - calculated on full data
+    const obvRaw = selectedIndicators.obv ? calculateOBV(data) : [];
+    const vrocRaw = selectedIndicators.vroc ? calculateVROC(volumes, 14) : [];
+    const mfiRaw = selectedIndicators.mfi ? calculateMFI(data, 14) : [];
     
-    // Volatility indicators
-    const atr = selectedIndicators.atr ? calculateATR(data, 14) : [];
-    const adx = selectedIndicators.adx ? calculateADX(data, 14) : [];
+    // Volatility indicators - calculated on full data
+    const atrRaw = selectedIndicators.atr ? calculateATR(data, 14) : [];
+    const adxRaw = selectedIndicators.adx ? calculateADX(data, 14) : [];
+    
+    // Now filter calculated results to match display range
+    // Create a map of dates from displayData for efficient lookup
+    const displayDates = new Set(dataForDisplay.map(item => item.date));
     
     // Format dates consistently
     const formatDate = (dateStr: string) => {
@@ -93,56 +101,66 @@ export function TechnicalAnalysisDashboard({ symbol, data }: TechnicalAnalysisDa
       return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
     };
     
+    // Filter calculated indicators to display range only
+    const filteredIndices: number[] = [];
+    data.forEach((item, i) => {
+      if (displayDates.has(item.date)) {
+        filteredIndices.push(i);
+      }
+    });
+    
+    console.log(`[TechnicalAnalysisDashboard] Filtered ${filteredIndices.length} indicator data points for display`);
+    
     return {
-      rsi: data.map((item, i) => ({
-        date: formatDate(item.date),
-        rsi: rsi[i] || null,
+      rsi: filteredIndices.map(i => ({
+        date: formatDate(data[i].date),
+        rsi: rsiRaw[i] || null,
       })),
-      macd: macd
-        ? data.map((item, i) => ({
-            date: formatDate(item.date),
-            macd: macd.macd[i],
-            signal: macd.signal[i],
-            histogram: macd.histogram[i],
+      macd: macdRaw
+        ? filteredIndices.map(i => ({
+            date: formatDate(data[i].date),
+            macd: macdRaw.macd[i],
+            signal: macdRaw.signal[i],
+            histogram: macdRaw.histogram[i],
           }))
         : [],
-      stochastic: stochastic
-        ? data.map((item, i) => ({
-            date: formatDate(item.date),
-            k: stochastic.k[i],
-            d: stochastic.d[i],
+      stochastic: stochasticRaw
+        ? filteredIndices.map(i => ({
+            date: formatDate(data[i].date),
+            k: stochasticRaw.k[i],
+            d: stochasticRaw.d[i],
           }))
         : [],
-      kdj: kdj
-        ? data.map((item, i) => ({
-            date: formatDate(item.date),
-            k: kdj.k[i],
-            d: kdj.d[i],
-            j: kdj.j[i],
+      kdj: kdjRaw
+        ? filteredIndices.map(i => ({
+            date: formatDate(data[i].date),
+            k: kdjRaw.k[i],
+            d: kdjRaw.d[i],
+            j: kdjRaw.j[i],
           }))
         : [],
-      obv: data.map((item, i) => ({
-        date: formatDate(item.date),
-        value: obv[i] || null,
+      obv: filteredIndices.map(i => ({
+        date: formatDate(data[i].date),
+        value: obvRaw[i] || null,
       })),
-      vroc: data.map((item, i) => ({
-        date: formatDate(item.date),
-        value: vroc[i] || null,
+      vroc: filteredIndices.map(i => ({
+        date: formatDate(data[i].date),
+        value: vrocRaw[i] || null,
       })),
-      mfi: data.map((item, i) => ({
-        date: formatDate(item.date),
-        value: mfi[i] || null,
+      mfi: filteredIndices.map(i => ({
+        date: formatDate(data[i].date),
+        value: mfiRaw[i] || null,
       })),
-      atr: data.map((item, i) => ({
-        date: formatDate(item.date),
-        value: atr[i] || null,
+      atr: filteredIndices.map(i => ({
+        date: formatDate(data[i].date),
+        value: atrRaw[i] || null,
       })),
-      adx: data.map((item, i) => ({
-        date: formatDate(item.date),
-        value: adx[i] || null,
+      adx: filteredIndices.map(i => ({
+        date: formatDate(data[i].date),
+        value: adxRaw[i] || null,
       })),
     };
-  }, [data, selectedIndicators]);
+  }, [data, dataForDisplay, selectedIndicators]);
 
   return (
     <div className="space-y-6">

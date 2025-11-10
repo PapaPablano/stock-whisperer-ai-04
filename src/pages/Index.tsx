@@ -17,45 +17,57 @@ const Index = () => {
   const [selectedSymbol, setSelectedSymbol] = useState("AAPL");
   const [dateRange, setDateRange] = useState("1mo"); // Default to 1 month
   const { data: liveQuote, isLoading: quoteLoading } = useStockQuote(selectedSymbol);
-  const { data: historicalData, isLoading: historyLoading } = useStockHistorical(selectedSymbol, dateRange);
   
-  // Convert historical data to the format needed for charts
-  const priceData = useMemo(() => {
+  // Calculate the range needed for indicator calculations (always fetch enough data)
+  const calculationRange = useMemo(() => {
+    // For short display ranges, fetch more data to calculate long-period indicators (SMA 200, etc.)
+    switch(dateRange) {
+      case '1d':
+      case '5d':
+      case '1mo':
+        return '1y';  // Fetch 1 year to calculate all indicators properly
+      case '3mo':
+        return '1y';  // Fetch 1 year
+      case '6mo':
+        return '1y';  // Fetch 1 year
+      case '1y':
+        return '2y';  // Fetch 2 years (for warmup period)
+      case '5y':
+        return '5y';  // Already enough data
+      default:
+        return '1y';
+    }
+  }, [dateRange]);
+  
+  console.log(`[Index] Display range: ${dateRange}, Fetching: ${calculationRange} for calculations`);
+  
+  const { data: historicalData, isLoading: historyLoading } = useStockHistorical(selectedSymbol, calculationRange);
+  
+  // Full dataset for indicator calculations
+  const calculationData = useMemo(() => {
     if (!historicalData || historicalData.length === 0) {
-      // Generate mock data with proper format based on selected date range
+      // Generate mock data - always generate enough for calculations
       const mockData: PriceData[] = [];
       const basePrice = 170;
       let currentPrice = basePrice;
       
-      // Calculate number of days based on date range
-      let daysToGenerate = 30;
-      switch(dateRange) {
-        case '1d':
-          daysToGenerate = 1;
-          break;
-        case '5d':
-          daysToGenerate = 5;
-          break;
-        case '1mo':
-          daysToGenerate = 30;
-          break;
-        case '3mo':
-          daysToGenerate = 90;
-          break;
-        case '6mo':
-          daysToGenerate = 180;
-          break;
+      // Always generate enough mock data for longest indicator (SMA 200)
+      let daysToGenerate = 365; // Default to 1 year for mock data
+      switch(calculationRange) {
         case '1y':
           daysToGenerate = 365;
           break;
+        case '2y':
+          daysToGenerate = 730;
+          break;
         case '5y':
-          daysToGenerate = 1825; // 5 years
+          daysToGenerate = 1825;
           break;
         default:
-          daysToGenerate = 30;
+          daysToGenerate = 365;
       }
       
-      console.log(`Generating ${daysToGenerate} days of mock data for range: ${dateRange}`);
+      console.log(`[Index] Generating ${daysToGenerate} days of mock data for calculation range: ${calculationRange}`);
       
       for (let i = daysToGenerate - 1; i >= 0; i--) {
         const date = new Date();
@@ -84,20 +96,64 @@ const Index = () => {
       date: typeof item.date === 'string' ? item.date.split('T')[0] : item.date,
     }));
     
-    console.log(`Using real API data: ${historicalData.length} data points`);
-    console.log(`Date range in data: ${formattedData[0]?.date} to ${formattedData[formattedData.length - 1]?.date}`);
+    console.log(`[Index] Using ${historicalData.length} data points for calculations`);
+    console.log(`[Index] Calculation date range: ${formattedData[0]?.date} to ${formattedData[formattedData.length - 1]?.date}`);
     
     return formattedData;
-  }, [historicalData, dateRange]);
+  }, [historicalData, calculationRange]);
+  
+  // Filter data for display based on selected date range
+  const displayData = useMemo(() => {
+    if (!calculationData || calculationData.length === 0) return [];
+    
+    const today = new Date();
+    let cutoffDate = new Date();
+    
+    switch(dateRange) {
+      case '1d':
+        cutoffDate.setDate(today.getDate() - 1);
+        break;
+      case '5d':
+        cutoffDate.setDate(today.getDate() - 5);
+        break;
+      case '1mo':
+        cutoffDate.setMonth(today.getMonth() - 1);
+        break;
+      case '3mo':
+        cutoffDate.setMonth(today.getMonth() - 3);
+        break;
+      case '6mo':
+        cutoffDate.setMonth(today.getMonth() - 6);
+        break;
+      case '1y':
+        cutoffDate.setFullYear(today.getFullYear() - 1);
+        break;
+      case '5y':
+        cutoffDate.setFullYear(today.getFullYear() - 5);
+        break;
+    }
+    
+    const filtered = calculationData.filter(item => {
+      const itemDate = new Date(item.date);
+      return itemDate >= cutoffDate;
+    });
+    
+    console.log(`[Index] Filtered to ${filtered.length} data points for display range: ${dateRange}`);
+    if (filtered.length > 0) {
+      console.log(`[Index] Display date range: ${filtered[0]?.date} to ${filtered[filtered.length - 1]?.date}`);
+    }
+    
+    return filtered;
+  }, [calculationData, dateRange]);
 
-  // Format data for PriceChart component (simplified format)
+  // Format data for PriceChart component (simplified format) - use displayData for chart
   const simplePriceData = useMemo(() => {
-    return priceData.map(item => ({
+    return displayData.map(item => ({
       date: new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
       price: item.close,
       volume: item.volume,
     }));
-  }, [priceData]);
+  }, [displayData]);
 
   const handleSymbolSelect = (symbol: string) => {
     setSelectedSymbol(symbol.toUpperCase());
@@ -149,7 +205,7 @@ const Index = () => {
             )}
             {/* Debug info */}
             <Badge variant="outline" className="text-xs">
-              Range: {dateRange} | Data Points: {priceData.length}
+              Range: {dateRange} | Display: {displayData.length} pts | Calc: {calculationData.length} pts
             </Badge>
           </div>
         </section>
@@ -206,7 +262,8 @@ const Index = () => {
           <h2 className="text-2xl font-bold mb-4">Technical Indicators</h2>
           <TechnicalAnalysisDashboard
             symbol={selectedSymbol}
-            data={priceData}
+            data={calculationData}
+            displayData={displayData}
           />
         </section>
       </main>
