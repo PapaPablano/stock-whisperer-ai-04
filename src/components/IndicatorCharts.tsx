@@ -342,8 +342,8 @@ export function KDJChart({ data }: KDJChartProps) {
             <Line
               type="monotone"
               dataKey="k"
-              stroke="#3b82f6"
-              strokeWidth={2}
+              stroke="#6b7280"
+              strokeWidth={3}
               dot={false}
               name="K Line"
               connectNulls
@@ -351,8 +351,8 @@ export function KDJChart({ data }: KDJChartProps) {
             <Line
               type="monotone"
               dataKey="d"
-              stroke="#f59e0b"
-              strokeWidth={2}
+              stroke="#ef4444"
+              strokeWidth={3}
               dot={false}
               name="D Line"
               connectNulls
@@ -360,8 +360,8 @@ export function KDJChart({ data }: KDJChartProps) {
             <Line
               type="monotone"
               dataKey="j"
-              stroke="#ec4899"
-              strokeWidth={2}
+              stroke="#22c55e"
+              strokeWidth={3}
               dot={false}
               name="J Line (Sensitive)"
               connectNulls
