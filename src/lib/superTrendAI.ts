@@ -13,6 +13,7 @@ export interface SuperTrendAISeriesPoint {
   signal: TrendDirection;
   distance: number | null;
   targetFactor: number | null;
+  targetFactorHistory?: number;
 }
 
 export interface SuperTrendAIOptions {
@@ -24,6 +25,9 @@ export interface SuperTrendAIOptions {
   fromCluster?: "Best" | "Average" | "Worst";
   maxIter?: number;
   maxData?: number;
+  snapToGrid?: boolean;
+  confirmBars?: number;
+  returnAllFactors?: boolean;
 }
 
 export interface SuperTrendAIClusterDiagnostics {
@@ -45,6 +49,16 @@ export interface SuperTrendAISignalMetric {
   atrFactor: number;
   performanceIndex: number;
   trend: "Bullish" | "Bearish";
+  confidence: number;
+  stopLevel: number | null;
+  takeProfit1: number | null;
+}
+
+export interface SuperTrendAIFactorDetail {
+  factor: number;
+  performance: number;
+  upper: number[];
+  lower: number[];
 }
 
 export interface SuperTrendAIInfo {
@@ -58,6 +72,16 @@ export interface SuperTrendAIInfo {
   perfClusters: Record<number, number[]>;
   factorsTested: number[];
   fromCluster: "Best" | "Average" | "Worst";
+  selectedClusterId: number | null;
+  selectedClusterLabel: "Best" | "Average" | "Worst" | null;
+  rawPerformanceIndex: number;
+  dataOffset: number;
+  regimeMetrics: {
+    averageTrendRun: number;
+    churnRate: number;
+  };
+  confirmBars: number;
+  allFactorAnalytics?: SuperTrendAIFactorDetail[];
 }
 
 export interface SuperTrendAIResult {
