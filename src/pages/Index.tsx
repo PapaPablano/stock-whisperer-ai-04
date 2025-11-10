@@ -3,6 +3,7 @@ import { StockCard } from "@/components/StockCard";
 import { MetricCard } from "@/components/MetricCard";
 import { TechnicalAnalysisDashboard } from "@/components/TechnicalAnalysisDashboard";
 import { PriceChart } from "@/components/PriceChart";
+import { PlotlyPriceChart } from "@/components/PlotlyPriceChart";
 import { TradingViewChart } from "@/components/TradingViewChart";
 import { featuredStocks } from "@/lib/mockData";
 import { TrendingUp, DollarSign, BarChart3, Activity } from "lucide-react";
@@ -18,6 +19,8 @@ import {
   type SuperTrendAIResult,
   type SuperTrendAISeriesPoint,
 } from "@/lib/superTrendAI";
+import { useFeatureFlags } from "@/lib/featureFlags";
+import type { Interval } from "@/lib/aggregateBars";
 
 const formatCurrency = (value?: number | null) => {
   if (value === null || value === undefined || Number.isNaN(value)) return "—";
@@ -133,6 +136,14 @@ const Index = () => {
   }));
   const [candleInterval, setCandleInterval] = useState<CandleInterval>("1d");
   const { data: liveQuote, isLoading: quoteLoading } = useStockQuote(selectedSymbol);
+  const { usePlotlyChart } = useFeatureFlags();
+
+  const intervalMap: Record<CandleInterval, Interval> = {
+    "10m": "10m",
+    "1h": "1h",
+    "4h": "4h",
+    "1d": "1d",
+  };
 
   useEffect(() => {
     if (candleInterval === "1d") {
@@ -583,20 +594,27 @@ const Index = () => {
 
         {/* Legacy Recharts Visualization */}
         <section>
-          <PriceChart 
-            symbol={selectedSymbol} 
-            data={priceChartData} 
-            selectedRange={dateRange}
-            onRangeChange={handleDateRangeChange}
-            candleInterval={candleInterval}
-            onCandleIntervalChange={setCandleInterval}
-            isIntradayActive={isIntradayActive}
-            isIntradayLoading={isIntradayPending}
-            intradayError={intradayErrorMessage}
-            intradayRange={intradaySettings.range}
-            showSupertrend={Boolean(selectedIndicators.supertrendAI)}
-            supertrendMeta={chartSupertrendResult?.info ?? null}
-          />
+          {usePlotlyChart ? (
+            <PlotlyPriceChart
+              symbol={selectedSymbol}
+              interval={intervalMap[candleInterval]}
+            />
+          ) : (
+            <PriceChart
+              symbol={selectedSymbol}
+              data={priceChartData}
+              selectedRange={dateRange}
+              onRangeChange={handleDateRangeChange}
+              candleInterval={candleInterval}
+              onCandleIntervalChange={setCandleInterval}
+              isIntradayActive={isIntradayActive}
+              isIntradayLoading={isIntradayPending}
+              intradayError={intradayErrorMessage}
+              intradayRange={intradaySettings.range}
+              showSupertrend={Boolean(selectedIndicators.supertrendAI)}
+              supertrendMeta={chartSupertrendResult?.info ?? null}
+            />
+          )}
         </section>
 
         {/* Technical Analysis Dashboard */}
