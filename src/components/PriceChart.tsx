@@ -13,7 +13,7 @@ import {
   YAxis,
 } from "recharts";
 import type { TooltipProps, LegendProps, LegendType } from "recharts";
-import type { CSSProperties } from "react";
+import { useMemo, type CSSProperties } from "react";
 import type { SuperTrendAIInfo } from "@/lib/superTrendAI";
 
 type CandleInterval = "10m" | "1h" | "4h" | "1d";
@@ -63,11 +63,23 @@ const tooltipStyles: CSSProperties = {
   minWidth: 180,
 };
 
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+const X_TICK_SPACING: Record<CandleInterval, number> = {
+  "10m": 2 * HOUR_MS,
+  "1h": 6 * HOUR_MS,
+  "4h": DAY_MS,
+  "1d": 14 * DAY_MS,
+};
+
 const formatNumber = (value: number | null | undefined, digits = 2) => {
   if (value === null || value === undefined || Number.isNaN(value)) {
     return "—";
   }
-  return value.toFixed(digits);
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: digits,
+  }).format(value);
 };
 
 const formatVolume = (value: number | null | undefined) => {
@@ -257,6 +269,37 @@ export const PriceChart = ({
     };
   })();
 
+  const xAxisTicks = useMemo(() => {
+    if (!data.length) {
+      return [] as string[];
+    }
+    const spacing = X_TICK_SPACING[candleInterval];
+    const ticks: string[] = [];
+    let lastTs: number | null = null;
+    data.forEach((point) => {
+      const ts = new Date(point.rawDate).getTime();
+      if (!Number.isFinite(ts)) {
+        return;
+      }
+      if (lastTs === null || ts - lastTs >= spacing) {
+        ticks.push(point.rawDate);
+        lastTs = ts;
+      }
+    });
+    if (ticks.length === 0) {
+      ticks.push(data[0].rawDate);
+    }
+    return ticks;
+  }, [data, candleInterval]);
+
+  const xAxisLabelMap = useMemo(() => {
+    const map = new Map<string, string>();
+    data.forEach((point) => {
+      map.set(point.rawDate, point.date);
+    });
+    return map;
+  }, [data]);
+
   return (
     <Card>
       <CardHeader>
@@ -320,12 +363,16 @@ export const PriceChart = ({
             <ComposedChart data={data} margin={{ top: 12, right: 16, bottom: 0, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
               <XAxis
-                dataKey="date"
+                dataKey="rawDate"
                 type="category"
                 scale="point"
                 allowDuplicatedCategory={false}
+                ticks={xAxisTicks}
                 className="text-xs"
                 tick={{ fill: "hsl(var(--muted-foreground))" }}
+                tickFormatter={(value) =>
+                  xAxisLabelMap.get(String(value)) ?? String(value)
+                }
               />
               <YAxis
                 className="text-xs"

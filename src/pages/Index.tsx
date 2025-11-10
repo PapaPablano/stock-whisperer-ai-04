@@ -9,7 +9,6 @@ import { featuredStocks } from "@/lib/mockData";
 import { TrendingUp, DollarSign, BarChart3, Activity } from "lucide-react";
 import { useStockQuote } from "@/hooks/useStockQuote";
 import { useStockHistorical } from "@/hooks/useStockHistorical";
-import { useStockIntraday, type IntradayData } from "@/hooks/useStockIntraday";
 import { useState, useMemo, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { DEFAULT_INDICATOR_CONFIG, type IndicatorConfig } from "@/components/IndicatorSelector";
@@ -22,6 +21,8 @@ import {
 import { useFeatureFlags } from "@/lib/featureFlags";
 import type { Interval } from "@/lib/aggregateBars";
 import { validateParity } from "@/lib/chartValidator";
+import { useUnifiedChartData } from "@/hooks/useUnifiedChartData";
+import type { Bar } from "@/lib/aggregateBars";
 
 const formatCurrency = (value?: number | null) => {
   if (value === null || value === undefined || Number.isNaN(value)) return "—";
@@ -64,13 +65,6 @@ const formatCompactNumber = (value?: number | null) => {
 
 type CandleInterval = "10m" | "1h" | "4h" | "1d";
 
-interface IntradaySettings {
-  enabled: boolean;
-  apiInterval: "1min" | "5min" | "15min" | "30min" | "1hour";
-  range: "1d" | "5d" | "1w";
-  aggregate: number;
-}
-
 const resolveIntradayRange = (range: string): "1d" | "5d" | "1w" => {
   switch (range) {
     case "1d":
@@ -80,53 +74,6 @@ const resolveIntradayRange = (range: string): "1d" | "5d" | "1w" => {
     default:
       return "1w";
   }
-};
-
-const ensureFinite = (value: number | null | undefined, fallback: number): number => {
-  if (value === null || value === undefined || Number.isNaN(value)) {
-    return fallback;
-  }
-  return value;
-};
-
-const bucketIntradayData = (data: IntradayData[], groupSize: number): PriceData[] => {
-  if (!data || data.length === 0 || groupSize <= 0) {
-    return [];
-  }
-
-  const buckets: PriceData[] = [];
-
-  for (let index = 0; index < data.length; index += groupSize) {
-    const slice = data.slice(index, index + groupSize);
-    if (!slice.length) {
-      continue;
-    }
-
-    const first = slice[0];
-    const last = slice[slice.length - 1];
-    const fallbackOpen = ensureFinite(first.close, 0);
-    const fallbackClose = ensureFinite(last.open, fallbackOpen);
-
-    const open = ensureFinite(first.open, fallbackOpen);
-    const close = ensureFinite(last.close, fallbackClose);
-    const highs = slice.map((point) => ensureFinite(point.high, Math.max(open, close)));
-    const lows = slice.map((point) => ensureFinite(point.low, Math.min(open, close)));
-    const high = Math.max(...highs, open, close);
-    const low = Math.min(...lows, open, close);
-    const volume = slice.reduce((sum, point) => sum + (point.volume ?? 0), 0);
-    const isoDate = new Date(last.datetime).toISOString();
-
-    buckets.push({
-      date: isoDate,
-      open,
-      high,
-      low,
-      close,
-      volume,
-    });
-  }
-
-  return buckets;
 };
 
 const Index = () => {
@@ -263,76 +210,101 @@ const Index = () => {
     return calculateSuperTrendAI(calculationData);
   }, [selectedIndicators.supertrendAI, calculationData]);
 
-  const intradaySettings = useMemo<IntradaySettings>(() => {
-    switch (candleInterval) {
-      case "10m":
-        return {
-          enabled: true,
-          apiInterval: "5min",
-          range: resolveIntradayRange(dateRange),
-          aggregate: 2,
-        };
-      case "1h":
-        return {
-          enabled: true,
-          apiInterval: "1hour",
-          range: resolveIntradayRange(dateRange),
-          aggregate: 1,
-        };
-      case "4h":
-        return {
-          enabled: true,
-          apiInterval: "1hour",
-          range: "1w",
-          aggregate: 4,
-        };
-      default:
-        return {
-          enabled: false,
-          apiInterval: "1hour",
-          range: "1d",
-          aggregate: 1,
-        };
-    }
-  }, [candleInterval, dateRange]);
+  const chartInterval = intervalMap[candleInterval];
+  const unified = useUnifiedChartData(selectedSymbol, chartInterval, {
+    session: "EQUITY_RTH",
+  });
 
   const {
-    data: intradayResponse,
-    isLoading: intradayLoading,
-    isFetching: intradayFetching,
-    error: intradayError,
-  } = useStockIntraday(
-    selectedSymbol,
-    intradaySettings.apiInterval,
-    intradaySettings.range,
-    { enabled: intradaySettings.enabled },
-  );
+    bars: unifiedBars,
+    source: unifiedSource,
+    loading: unifiedLoading,
+    error: unifiedError,
+  } = unified;
 
-  const intradayData = intradayResponse?.data ?? [];
-  const isIntradayActive = intradaySettings.enabled && intradayData.length > 0 && !intradayError;
-
-  const isIntradayPending = intradayLoading || intradayFetching;
-  const intradayErrorMessage = intradayError
-    ? intradayError instanceof Error
-      ? intradayError.message
-      : typeof intradayError === "object" && intradayError !== null && "message" in intradayError
-        ? String((intradayError as { message?: unknown }).message ?? intradayError)
-        : String(intradayError)
-    : null;
-
-  const chartPriceSeries = useMemo<PriceData[]>(() => {
-    if (isIntradayActive) {
-      return bucketIntradayData(intradayData, intradaySettings.aggregate);
+  const selectedBarsForDisplay = useMemo<Bar[]>(() => {
+    if (!unifiedBars || unifiedBars.length === 0) {
+      return [];
     }
-    return displayData;
-  }, [isIntradayActive, intradayData, intradaySettings.aggregate, displayData]);
+
+    const cutoff = new Date();
+    switch (dateRange) {
+      case "1d":
+        cutoff.setDate(cutoff.getDate() - 1);
+        break;
+      case "5d":
+        cutoff.setDate(cutoff.getDate() - 5);
+        break;
+      case "1mo":
+        cutoff.setMonth(cutoff.getMonth() - 1);
+        break;
+      case "3mo":
+        cutoff.setMonth(cutoff.getMonth() - 3);
+        break;
+      case "6mo":
+        cutoff.setMonth(cutoff.getMonth() - 6);
+        break;
+      case "1y":
+        cutoff.setFullYear(cutoff.getFullYear() - 1);
+        break;
+      case "5y":
+        cutoff.setFullYear(cutoff.getFullYear() - 5);
+        break;
+      default:
+        cutoff.setMonth(cutoff.getMonth() - 1);
+        break;
+    }
+
+    const filtered = unifiedBars.filter((bar) => {
+      const barDate = new Date(bar.datetime);
+      return !Number.isNaN(barDate.getTime()) && barDate >= cutoff;
+    });
+
+    const sorted = (filtered.length > 0 ? filtered : unifiedBars)
+      .slice()
+      .sort((a, b) => a.datetime.localeCompare(b.datetime));
+
+    const MAX_VISIBLE = 1500;
+    const trimmed = sorted.length > MAX_VISIBLE ? sorted.slice(-MAX_VISIBLE) : sorted;
+
+    if (import.meta.env.DEV) {
+      const tail = trimmed.slice(-5).map((bar) => ({
+        date: bar.datetime,
+        close: bar.close,
+      }));
+      console.debug(
+        "[Index] Selected bars for display",
+        { range: dateRange, count: trimmed.length, interval: chartInterval, source: unifiedSource },
+        tail
+      );
+    }
+
+    return trimmed;
+  }, [chartInterval, dateRange, unifiedBars, unifiedSource]);
 
   const chartSupertrendResult = useMemo<SuperTrendAIResult | null>(() => {
-    if (!selectedIndicators.supertrendAI || chartPriceSeries.length === 0) {
+    if (!selectedIndicators.supertrendAI || selectedBarsForDisplay.length === 0) {
       return null;
     }
-    return calculateSuperTrendAI(chartPriceSeries);
-  }, [selectedIndicators.supertrendAI, chartPriceSeries]);
+    const series: PriceData[] = selectedBarsForDisplay.map((bar) => ({
+      date: bar.datetime,
+      open: bar.open,
+      high: bar.high,
+      low: bar.low,
+      close: bar.close,
+      volume: bar.volume,
+    }));
+    return calculateSuperTrendAI(series);
+  }, [selectedBarsForDisplay, selectedIndicators.supertrendAI]);
+
+  const isIntradayActive = chartInterval !== "1d";
+  const isIntradayPending = unifiedLoading && isIntradayActive;
+  const intradayErrorMessage = isIntradayActive && unifiedError
+    ? unifiedError instanceof Error
+      ? unifiedError.message
+      : String(unifiedError)
+    : null;
+  const intradayRange = isIntradayActive ? resolveIntradayRange(dateRange) : undefined;
 
   const priceChartData = useMemo(() => {
     const overlayByDate = new Map<string, SuperTrendAISeriesPoint>();
@@ -343,36 +315,58 @@ const Index = () => {
       });
     }
 
-    const effectiveInterval = isIntradayActive ? candleInterval : "1d";
-
-    return chartPriceSeries.map((item) => {
-      const dateObj = new Date(item.date);
-      const formattedDate = (() => {
-        if (effectiveInterval === "1d") {
-          return dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const hasMultipleDays = (() => {
+      if (selectedBarsForDisplay.length < 2) {
+        return false;
+      }
+      const first = selectedBarsForDisplay[0];
+      const firstDate = new Date(first.datetime);
+      if (Number.isNaN(firstDate.getTime())) {
+        return true;
+      }
+      const benchmark = firstDate.toDateString();
+      return selectedBarsForDisplay.some((bar) => {
+        const dt = new Date(bar.datetime);
+        if (Number.isNaN(dt.getTime())) {
+          return true;
         }
-        if (effectiveInterval === "4h") {
-          return dateObj.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric" });
-        }
-        return dateObj.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
-      })();
+        return dt.toDateString() !== benchmark;
+      });
+    })();
 
-      const overlay = overlayByDate.get(item.date);
+    const formatLabel = (iso: string) => {
+      const dateObj = new Date(iso);
+      if (Number.isNaN(dateObj.getTime())) {
+        return iso;
+      }
+      if (chartInterval === "1d") {
+        return dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      }
+      const includeDate = chartInterval === "4h" || hasMultipleDays;
+      if (includeDate) {
+        return dateObj.toLocaleString("en-US", {
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        });
+      }
+      return dateObj.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+    };
+
+    return selectedBarsForDisplay.map((bar) => {
+      const overlay = overlayByDate.get(bar.datetime);
       const supertrend = overlay?.supertrend ?? null;
       const atrValue = overlay?.atr ?? null;
-      const close = item.close;
-      const open = item.open ?? item.close;
-      const high = item.high ?? Math.max(open, close);
-      const low = item.low ?? Math.min(open, close);
 
       return {
-        date: formattedDate,
-        rawDate: item.date,
-        price: close,
-        open,
-        high,
-        low,
-        volume: item.volume ?? 0,
+        date: formatLabel(bar.datetime),
+        rawDate: bar.datetime,
+        price: bar.close,
+        open: bar.open,
+        high: bar.high,
+        low: bar.low,
+        volume: bar.volume,
         trailLong: overlay && overlay.trend === 1 && supertrend !== null ? supertrend : null,
         trailShort: overlay && overlay.trend === -1 && supertrend !== null ? supertrend : null,
         ama: overlay?.ama ?? null,
@@ -380,13 +374,36 @@ const Index = () => {
         atrLower: supertrend !== null && atrValue !== null ? supertrend - atrValue : null,
         upperBand: overlay?.upperBand ?? null,
         lowerBand: overlay?.lowerBand ?? null,
-        buySignal: overlay?.signal === 1 ? (supertrend ?? close) : null,
-        sellSignal: overlay?.signal === -1 ? (supertrend ?? close) : null,
+        buySignal: overlay?.signal === 1 ? supertrend ?? bar.close : null,
+        sellSignal: overlay?.signal === -1 ? supertrend ?? bar.close : null,
         supertrend,
         trendDirection: overlay?.trend ?? 0,
       };
     });
-  }, [chartPriceSeries, chartSupertrendResult, candleInterval, isIntradayActive]);
+  }, [chartInterval, chartSupertrendResult, selectedBarsForDisplay]);
+
+  const plotlyChartDataOverride = useMemo(() => {
+    const dates = selectedBarsForDisplay.map((bar) => bar.datetime);
+    const open = selectedBarsForDisplay.map((bar) => bar.open);
+    const high = selectedBarsForDisplay.map((bar) => bar.high);
+    const low = selectedBarsForDisplay.map((bar) => bar.low);
+    const close = selectedBarsForDisplay.map((bar) => bar.close);
+    const volumeValues = selectedBarsForDisplay.map((bar) => bar.volume);
+    const volumeColors: Array<"up" | "down"> = close.map((value, index) => {
+      const prev = index > 0 ? close[index - 1] : value;
+      return value >= prev ? "up" : "down";
+    });
+
+    return {
+      dates,
+      ohlc: { open, high, low, close },
+      volume: { values: volumeValues, colors: volumeColors },
+      st: chartSupertrendResult,
+      source: unifiedSource ?? null,
+      loading: unifiedLoading,
+      error: unifiedError,
+    };
+  }, [chartSupertrendResult, selectedBarsForDisplay, unifiedError, unifiedLoading, unifiedSource]);
 
   const { low52Week, high52Week } = useMemo(() => {
     if (!calculationData.length) {
@@ -435,23 +452,18 @@ const Index = () => {
   }, [calculationData]);
 
   const legacyParitySnapshot = useMemo(() => {
-    if (priceChartData.length === 0) {
+    const lastBar = selectedBarsForDisplay.at(-1);
+    if (!lastBar) {
       return null;
     }
-    const lastPoint = priceChartData[priceChartData.length - 1];
-    if (!lastPoint) {
+    const stSeries = chartSupertrendResult?.series ?? [];
+    const stPoint =
+      stSeries.find((point) => point.date === lastBar.datetime) ?? stSeries.at(-1) ?? null;
+    if (!Number.isFinite(lastBar.close)) {
       return null;
     }
-    const overlayPoint = chartSupertrendResult?.series?.find(
-      (point) => point.date === lastPoint.rawDate
-    );
-    const close = typeof lastPoint.price === "number" ? lastPoint.price : null;
-    const stValue = overlayPoint?.supertrend ?? lastPoint.supertrend ?? null;
-    if (close === null) {
-      return null;
-    }
-    return { close, st: stValue };
-  }, [chartSupertrendResult, priceChartData]);
+    return { close: lastBar.close, st: stPoint?.supertrend ?? null };
+  }, [chartSupertrendResult, selectedBarsForDisplay]);
 
   useEffect(() => {
     if (!usePlotlyChart) {
@@ -465,12 +477,36 @@ const Index = () => {
     if (!Number.isFinite(legacyClose) || !Number.isFinite(plotlyClose)) {
       return;
     }
+    if (import.meta.env.DEV) {
+      const legacyDates = selectedBarsForDisplay.map((bar) => bar.datetime);
+      const legacyClose = selectedBarsForDisplay.map((bar) => bar.close);
+      const plotlyDates = plotlyChartDataOverride?.dates ?? [];
+      const plotlyClose = plotlyChartDataOverride?.ohlc.close ?? [];
+      console.log("Legacy tail", legacyDates.slice(-5), legacyClose.slice(-5));
+      console.log("Plotly tail", plotlyDates.slice(-5), plotlyClose.slice(-5));
+      if (typeof window !== "undefined") {
+        const parityWindow = window as typeof window & {
+          __chartParity?: {
+            legacyDates: string[];
+            legacyClose: number[];
+            plotlyDates: string[];
+            plotlyClose: number[];
+          };
+        };
+        parityWindow.__chartParity = {
+          legacyDates,
+          legacyClose,
+          plotlyDates,
+          plotlyClose,
+        };
+      }
+    }
     validateParity(
       selectedSymbol,
       { close: legacyClose, st: legacyParitySnapshot.st ?? 0 },
       { close: plotlyClose, st: plotlyParitySnapshot.st ?? 0 }
     );
-  }, [legacyParitySnapshot, plotlyParitySnapshot, selectedSymbol, usePlotlyChart]);
+  }, [legacyParitySnapshot, plotlyParitySnapshot, plotlyChartDataOverride, selectedBarsForDisplay, selectedSymbol, usePlotlyChart]);
   const keyMetrics = useMemo(() => {
     const change = liveQuote?.change ?? null;
     const changePercent = liveQuote?.changePercent ?? null;
@@ -645,7 +681,8 @@ const Index = () => {
           {usePlotlyChart ? (
             <PlotlyPriceChart
               symbol={selectedSymbol}
-              interval={intervalMap[candleInterval]}
+              interval={chartInterval}
+              chartDataOverride={plotlyChartDataOverride}
               onDataReady={({ close, st }) => {
                 setPlotlyParitySnapshot({ close, st });
               }}
@@ -661,7 +698,7 @@ const Index = () => {
               isIntradayActive={isIntradayActive}
               isIntradayLoading={isIntradayPending}
               intradayError={intradayErrorMessage}
-              intradayRange={intradaySettings.range}
+              intradayRange={intradayRange}
               showSupertrend={Boolean(selectedIndicators.supertrendAI)}
               supertrendMeta={chartSupertrendResult?.info ?? null}
             />
