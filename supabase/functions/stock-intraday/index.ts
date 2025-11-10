@@ -40,6 +40,7 @@ const MAX_RETRIES = 5
 const BASE_BACKOFF_MS = 400
 const MAX_BACKOFF_MS = 12_000
 const JITTER_MS = 250
+const MAX_POLYGON_CALLS_PER_SECOND = 4
 const MAX_POLYGON_CALLS_PER_MINUTE = 5
 const RATE_LIMIT_KEY = `${CACHE_PREFIX}:polygon:budget`
 
@@ -152,19 +153,37 @@ const getCurrentWindowStartIso = () => {
   return truncated.toISOString()
 }
 
-const ensurePolygonRateLimitBudget = async (): Promise<boolean> => {
+const getCurrentSecondStartIso = () => {
+  const now = new Date()
+  const truncated = new Date(Math.floor(now.getTime() / 1_000) * 1_000)
+  return truncated.toISOString()
+}
+
+const ensurePolygonRateLimitBudget = async (): Promise<{ allowed: boolean; retryAfterMs: number }> => {
   try {
     const windowStartIso = getCurrentWindowStartIso()
+    const secondStartIso = getCurrentSecondStartIso()
     const { data, error } = await supabaseAdmin
       .from('stock_cache')
       .select('data')
       .eq('cache_key', RATE_LIMIT_KEY)
       .maybeSingle()
 
-    const currentCount = data?.data?.windowStart === windowStartIso ? data.data.count ?? 0 : 0
+    const minuteBucketActive = data?.data?.windowStart === windowStartIso
+    const secondBucketActive = data?.data?.secondStart === secondStartIso
+    const currentMinuteCount = minuteBucketActive ? data.data.minuteCount ?? 0 : 0
+    const currentSecondCount = secondBucketActive ? data.data.secondCount ?? 0 : 0
 
-    if (currentCount >= MAX_POLYGON_CALLS_PER_MINUTE) {
-      return false
+    if (currentMinuteCount >= MAX_POLYGON_CALLS_PER_MINUTE) {
+      const now = Date.now()
+      const nextWindow = new Date(windowStartIso).getTime() + 60_000
+      return { allowed: false, retryAfterMs: Math.max(0, nextWindow - now) }
+    }
+
+    if (currentSecondCount >= MAX_POLYGON_CALLS_PER_SECOND) {
+      const now = Date.now()
+      const nextSecond = new Date(secondStartIso).getTime() + 1_000
+      return { allowed: false, retryAfterMs: Math.max(0, nextSecond - now) }
     }
 
     await supabaseAdmin
@@ -174,17 +193,19 @@ const ensurePolygonRateLimitBudget = async (): Promise<boolean> => {
           cache_key: RATE_LIMIT_KEY,
           data: {
             windowStart: windowStartIso,
-            count: currentCount + 1,
+            minuteCount: currentMinuteCount + 1,
+            secondStart: secondStartIso,
+            secondCount: currentSecondCount + 1,
           },
           last_updated: new Date().toISOString(),
         },
         { onConflict: 'cache_key' },
       )
 
-    return true
+    return { allowed: true, retryAfterMs: 0 }
   } catch (error) {
     console.error('Unable to persist Polygon rate-limit state', error)
-    return true
+    return { allowed: true, retryAfterMs: 0 }
   }
 }
 
@@ -204,17 +225,41 @@ const createRateLimitedFetcher = () => {
   const fetchWithRetry = async (url: string, attempt = 0): Promise<Response> => {
     await waitForSlot()
 
-    const hasBudget = await ensurePolygonRateLimitBudget()
-    if (!hasBudget) {
-      return new Response('Polygon call budget exceeded', { status: 429 })
+    const budget = await ensurePolygonRateLimitBudget()
+    if (!budget.allowed) {
+      const waitTime = budget.retryAfterMs || BASE_BACKOFF_MS
+      if (attempt >= MAX_RETRIES - 1) {
+        return new Response('Polygon call budget exceeded', {
+          status: 429,
+          headers: { 'Retry-After': String(Math.ceil(waitTime / 1000)) },
+        })
+      }
+      await sleep(waitTime + Math.random() * JITTER_MS)
+      return fetchWithRetry(url, attempt + 1)
     }
 
+    const requestTimestamp = new Date().toISOString()
+    console.debug('Polygon request dispatch', { url, attempt, timestamp: requestTimestamp })
+
     const response = await fetch(url)
+    const retryAfterHeader = response.headers.get('retry-after')
+    const requestId =
+      response.headers.get('x-request-id') ??
+      response.headers.get('x-requestid') ??
+      response.headers.get('request_id') ??
+      undefined
+
     if (response.status === 429) {
+      console.warn('Polygon rate limited response', {
+        url,
+        attempt,
+        timestamp: requestTimestamp,
+        retryAfter: retryAfterHeader,
+        requestId,
+      })
       if (attempt >= MAX_RETRIES - 1) {
         return response
       }
-      const retryAfterHeader = response.headers.get('retry-after')
       const retryAfterSeconds = retryAfterHeader ? Number.parseFloat(retryAfterHeader) : undefined
       const backoff = retryAfterSeconds && !Number.isNaN(retryAfterSeconds)
         ? retryAfterSeconds * 1000
@@ -224,6 +269,13 @@ const createRateLimitedFetcher = () => {
     }
 
     if (!response.ok && response.status >= 500 && attempt < MAX_RETRIES - 1) {
+      console.error('Polygon server error response', {
+        url,
+        attempt,
+        timestamp: requestTimestamp,
+        status: response.status,
+        requestId,
+      })
       const backoff = Math.min(BASE_BACKOFF_MS * 2 ** attempt, MAX_BACKOFF_MS)
       await sleep(backoff + Math.random() * JITTER_MS)
       return fetchWithRetry(url, attempt + 1)
