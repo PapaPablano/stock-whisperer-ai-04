@@ -1,9 +1,8 @@
-// @ts-nocheck
 import { supabaseAdmin } from '../_shared/supabaseAdminClient.ts'
-import { FinnhubClient } from '../_shared/finnhub.ts'
-import { BarsFallback, fetchNormalizedFinnhubBars } from '../_shared/polygonFallback.ts'
-import type { Bar as FallbackBar } from '../_shared/polygonFallback.ts'
-import type { PolygonClient } from '../_shared/polygon.ts'
+import { FinnhubClient } from '../../../services/finnhub.ts'
+import { BarsFallback, fetchNormalizedFinnhubBars } from '../../../services/polygonFallback.ts'
+import type { Bar as FallbackBar } from '../../../services/polygonFallback.ts'
+import type { PolygonClient } from '../../../services/polygon.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
