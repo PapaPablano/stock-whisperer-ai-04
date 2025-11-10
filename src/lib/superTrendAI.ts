@@ -391,30 +391,46 @@ const calculateSignalMetrics = (
   data: PriceData[],
   series: SuperTrendAISeriesPoint[],
   info: SuperTrendAIInfo,
+  atr: number[],
 ): SuperTrendAISignalMetric[] => {
   const metrics: SuperTrendAISignalMetric[] = [];
+  const selectedDispersion = info.selectedClusterId !== null
+    ? info.clusterDispersions[info.selectedClusterId] ?? 0
+    : 0;
+  const dispersionFactor = selectedDispersion > 0 ? 1 / (1 + selectedDispersion) : 1;
+  const basePerformance = clamp(info.performanceIndex, 0, 1);
+  const baseConfidence = clamp(basePerformance * dispersionFactor, 0, 1);
 
   series.forEach((point, index) => {
     if (point.signal === 0) {
       return;
     }
 
-    const performanceIndex = info.performanceIndex;
     const distance = point.distance;
     const distancePct = distance !== null && point.close !== 0
       ? (distance / point.close) * 100
+      : null;
+    const atrValue = Number.isFinite(atr[index]) ? atr[index] : 0;
+    const rawAtrFactor = point.targetFactor ?? info.targetFactor;
+    const atrFactor = Number.isFinite(rawAtrFactor) ? rawAtrFactor : info.targetFactor;
+    const stopLevel = Number.isFinite(point.supertrend ?? NaN) ? point.supertrend : null;
+    const takeProfit1 = atrValue > 0 && Number.isFinite(atrFactor)
+      ? point.close + (point.signal === 1 ? atrValue * atrFactor : -atrValue * atrFactor)
       : null;
 
     metrics.push({
       timestamp: data[index]?.date ?? String(index),
       signalType: point.signal === 1 ? "Buy" : "Sell",
       price: point.close,
-      supertrendLevel: point.supertrend,
+      supertrendLevel: stopLevel,
       distance,
       distancePct,
-      atrFactor: point.targetFactor ?? info.targetFactor,
-      performanceIndex,
+      atrFactor,
+      performanceIndex: info.performanceIndex,
       trend: point.trend === 1 ? "Bullish" : "Bearish",
+      confidence: baseConfidence,
+      stopLevel,
+      takeProfit1,
     });
   });
 
