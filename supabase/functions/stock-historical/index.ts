@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { supabaseAdmin } from '../_shared/supabaseAdminClient.ts'
 
 const corsHeaders = {
@@ -46,7 +45,63 @@ const getDateRange = (range: string) => {
   }
 }
 
-const getCachedPayload = async (cacheKey: string) => {
+type HistoricalPoint = {
+  date: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+  volume: number | null;
+};
+
+interface CachePayload {
+  data?: HistoricalPoint[];
+  source?: string;
+  cachedAt?: string;
+  lastUpdated?: string;
+  cacheHit?: boolean;
+}
+
+interface MarketstackResponse {
+  data?: Array<{
+    date: string;
+    open: number | null;
+    high: number | null;
+    low: number | null;
+    close: number | null;
+    volume: number | null;
+  }>;
+}
+
+interface YahooChartResponse {
+  chart: {
+    result: Array<{
+      timestamp: number[];
+      indicators: {
+        quote: Array<{
+          open: Array<number | null>;
+          high: Array<number | null>;
+          low: Array<number | null>;
+          close: Array<number | null>;
+          volume: Array<number | null>;
+        }>;
+      };
+    }>;
+  };
+}
+
+interface PolygonAggResponse {
+  results?: Array<{
+    t: number;
+    o: number | null;
+    h: number | null;
+    l: number | null;
+    c: number | null;
+    v: number | null;
+  }>;
+}
+
+const getCachedPayload = async (cacheKey: string): Promise<CachePayload | null> => {
   try {
     const { data, error } = await supabaseAdmin
       .from('stock_cache')
@@ -68,7 +123,7 @@ const getCachedPayload = async (cacheKey: string) => {
   }
 }
 
-const setCachedPayload = async (cacheKey: string, payload: Record<string, unknown>) => {
+const setCachedPayload = async (cacheKey: string, payload: CachePayload) => {
   try {
     await supabaseAdmin
       .from('stock_cache')
@@ -88,7 +143,9 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { symbol, range = '1mo' } = await req.json()
+    const body = (await req.json()) as { symbol?: string; range?: string } | null
+    const symbol = body?.symbol
+    const range = body?.range ?? '1mo'
     
     if (!symbol) {
       return new Response(
@@ -124,11 +181,11 @@ Deno.serve(async (req) => {
         )
         
         if (marketstackResponse.ok) {
-          const marketstackData = await marketstackResponse.json()
-          
+          const marketstackData = (await marketstackResponse.json()) as MarketstackResponse
+
           if (marketstackData.data && marketstackData.data.length > 0) {
             const historicalData = marketstackData.data
-              .map((item: any) => ({
+              .map<HistoricalPoint>((item) => ({
                 date: item.date.split('T')[0], // Convert to YYYY-MM-DD format
                 open: item.open,
                 high: item.high,
@@ -136,7 +193,7 @@ Deno.serve(async (req) => {
                 close: item.close,
                 volume: item.volume,
               }))
-              .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime()) // Sort chronologically
+              .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()) // Sort chronologically
 
             console.log(`Successfully fetched ${historicalData.length} historical records from Marketstack`)
 
@@ -166,19 +223,21 @@ Deno.serve(async (req) => {
       )
       
       if (yahooResponse.ok) {
-        const yahooData = await yahooResponse.json()
-        const result = yahooData.chart.result[0]
-        const timestamps = result.timestamp
-        const quote = result.indicators.quote[0]
-        
-        const historicalData = timestamps.map((timestamp: number, index: number) => ({
-          date: new Date(timestamp * 1000).toISOString().split('T')[0],
-          open: quote.open[index],
-          high: quote.high[index],
-          low: quote.low[index],
-          close: quote.close[index],
-          volume: quote.volume[index],
-        })).filter((item: any) => item.close !== null)
+        const yahooData = (await yahooResponse.json()) as YahooChartResponse
+        const result = yahooData.chart.result?.[0]
+        const timestamps = result?.timestamp ?? []
+        const quote = result?.indicators.quote?.[0]
+
+        const historicalData = timestamps
+          .map<HistoricalPoint>((timestamp, index) => ({
+            date: new Date(timestamp * 1000).toISOString().split('T')[0],
+            open: quote?.open?.[index] ?? null,
+            high: quote?.high?.[index] ?? null,
+            low: quote?.low?.[index] ?? null,
+            close: quote?.close?.[index] ?? null,
+            volume: quote?.volume?.[index] ?? null,
+          }))
+          .filter((item) => item.close !== null)
 
         console.log(`Successfully fetched ${historicalData.length} historical records from Yahoo Finance`)
 
@@ -214,13 +273,13 @@ Deno.serve(async (req) => {
       throw new Error(`Polygon API error: ${polygonResponse.statusText}`)
     }
 
-    const polygonData = await polygonResponse.json()
+  const polygonData = (await polygonResponse.json()) as PolygonAggResponse
     
     if (!polygonData.results || polygonData.results.length === 0) {
       throw new Error('No historical data available for this symbol')
     }
 
-    const historicalData = polygonData.results.map((item: any) => ({
+    const historicalData = polygonData.results.map<HistoricalPoint>((item) => ({
       date: new Date(item.t).toISOString().split('T')[0],
       open: item.o,
       high: item.h,

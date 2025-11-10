@@ -4,6 +4,7 @@ import { IndicatorSelector, type IndicatorConfig } from '@/components/IndicatorS
 import { useStockHistorical } from '@/hooks/useStockHistorical';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { calculateRSI, calculateMACD, calculateSMA } from '@/lib/technicalIndicators';
 
 /**
  * Example 1: Basic Usage with Default Indicators
@@ -233,21 +234,29 @@ export function MultiSymbolAnalysis() {
   
   return (
     <div className="space-y-8">
-      {symbols.map((symbol) => {
-        const { data } = useStockHistorical(symbol, '3mo');
-        
-        return (
-          <div key={symbol}>
-            <h2 className="text-2xl font-bold mb-4">{symbol}</h2>
-            {data && (
-              <TechnicalAnalysisDashboard
-                symbol={symbol}
-                data={data}
-              />
-            )}
-          </div>
-        );
-      })}
+      {symbols.map((symbol) => (
+        <SymbolAnalysis key={symbol} symbol={symbol} />
+      ))}
+    </div>
+  );
+}
+
+function SymbolAnalysis({ symbol }: { symbol: string }) {
+  const { data } = useStockHistorical(symbol, '3mo');
+
+  if (!data || data.length === 0) {
+    return (
+      <div>
+        <h2 className="text-2xl font-bold mb-4">{symbol}</h2>
+        <p className="text-sm text-muted-foreground">No historical data available.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <h2 className="text-2xl font-bold mb-4">{symbol}</h2>
+      <TechnicalAnalysisDashboard symbol={symbol} data={data} />
     </div>
   );
 }
@@ -265,9 +274,6 @@ export function TradingSignals() {
   // Calculate signals
   const latestClose = data[data.length - 1]?.close || 0;
   const closes = data.map(d => d.close);
-  
-  // Import calculation functions
-  const { calculateRSI, calculateMACD, calculateSMA } = require('@/lib/technicalIndicators');
   
   const rsi = calculateRSI(closes, 14);
   const latestRSI = rsi[rsi.length - 1];

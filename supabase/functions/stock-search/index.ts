@@ -1,8 +1,25 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+interface YahooSearchResponse {
+  quotes: Array<{
+    symbol: string;
+    shortname?: string;
+    longname?: string;
+    quoteType?: string;
+    exchange?: string;
+  }>;
+}
+
+interface PolygonSearchResponse {
+  results?: Array<{
+    ticker: string;
+    name: string;
+    type?: string;
+    primary_exchange?: string;
+  }>;
 }
 
 Deno.serve(async (req) => {
@@ -11,7 +28,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { query } = await req.json()
+    const body = (await req.json()) as { query?: string } | null
+    const query = body?.query
     
     if (!query) {
       return new Response(
@@ -29,8 +47,8 @@ Deno.serve(async (req) => {
       )
       
       if (yahooResponse.ok) {
-        const yahooData = await yahooResponse.json()
-        const results = yahooData.quotes.map((quote: any) => ({
+        const yahooData = (await yahooResponse.json()) as YahooSearchResponse
+        const results = (yahooData.quotes ?? []).map((quote) => ({
           symbol: quote.symbol,
           name: quote.shortname || quote.longname || quote.symbol,
           type: quote.quoteType,
@@ -61,9 +79,9 @@ Deno.serve(async (req) => {
       throw new Error(`Polygon API error: ${polygonResponse.statusText}`)
     }
 
-    const polygonData = await polygonResponse.json()
-    
-    const results = (polygonData.results || []).map((ticker: any) => ({
+    const polygonData = (await polygonResponse.json()) as PolygonSearchResponse
+
+    const results = (polygonData.results ?? []).map((ticker) => ({
       symbol: ticker.ticker,
       name: ticker.name,
       type: ticker.type,

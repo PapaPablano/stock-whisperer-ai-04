@@ -1,16 +1,18 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { 
-  ComposedChart, 
-  Bar, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  Legend, 
+import {
+  ComposedChart,
+  Bar,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
   ResponsiveContainer,
-  Cell 
+  Cell,
 } from "recharts";
+import type { TooltipProps } from "recharts";
+import type { ValueType, NameType } from "recharts/types/component/DefaultTooltipContent";
 import { useMemo } from "react";
 
 interface VolumeChartProps {
@@ -19,24 +21,44 @@ interface VolumeChartProps {
   maPeriod?: number;
 }
 
-const CustomTooltip = ({ active, payload, label }: any) => {
+type ChartDatum = {
+  date: string;
+  volume: number;
+  change: number;
+  volumeMA: number | null;
+  color: string;
+};
+
+const CustomTooltip = ({ active, payload, label }: TooltipProps<ValueType, NameType>) => {
   if (active && payload && payload.length) {
-    const volumeData = payload.find((p: any) => p.dataKey === 'volume');
-    const maData = payload.find((p: any) => p.dataKey === 'volumeMA');
-    
+    const volumeData = payload.find((p) => p.dataKey === "volume");
+    const maData = payload.find((p) => p.dataKey === "volumeMA");
+
+    const volumeValue =
+      typeof volumeData?.value === "number"
+        ? volumeData.value.toLocaleString()
+        : typeof volumeData?.value === "string"
+          ? volumeData.value
+          : null;
+
+    const maValue =
+      typeof maData?.value === "number"
+        ? Math.round(maData.value).toLocaleString()
+        : null;
+
     return (
       <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
         <p className="text-muted-foreground text-xs mb-2">{label}</p>
-        {volumeData && (
+        {volumeValue && (
           <p className="text-sm font-medium">
             <span className="text-muted-foreground">Volume: </span>
-            <span className="text-foreground">{volumeData.value.toLocaleString()}</span>
+            <span className="text-foreground">{volumeValue}</span>
           </p>
         )}
-        {maData && maData.value && (
+        {maValue && (
           <p className="text-sm font-medium">
             <span className="text-muted-foreground">MA: </span>
-            <span className="text-purple-400">{Math.round(maData.value).toLocaleString()}</span>
+            <span className="text-purple-400">{maValue}</span>
           </p>
         )}
       </div>
@@ -47,17 +69,17 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 
 export const VolumeChart = ({ data, showMA = true, maPeriod = 20 }: VolumeChartProps) => {
   // Calculate volume moving average
-  const chartData = useMemo(() => {
+  const chartData = useMemo<ChartDatum[]>(() => {
     return data.map((item, index) => {
-      let volumeMA = null;
-      
+      let volumeMA: number | null = null;
+
       if (showMA && index >= maPeriod - 1) {
         const sum = data
           .slice(index - maPeriod + 1, index + 1)
           .reduce((acc, curr) => acc + curr.volume, 0);
         volumeMA = sum / maPeriod;
       }
-      
+
       return {
         ...item,
         volumeMA,

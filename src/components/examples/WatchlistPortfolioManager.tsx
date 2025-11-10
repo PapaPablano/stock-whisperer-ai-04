@@ -69,8 +69,9 @@ export function WatchlistPortfolioManager() {
       });
       setNewSymbol('');
       toast.success(`${newSymbol.toUpperCase()} added to watchlist!`);
-    } catch (error: any) {
-      if (error.code === '23505') {
+    } catch (error) {
+      const errorWithCode = error as { code?: string };
+      if (errorWithCode?.code === '23505') {
         toast.error('Stock already in watchlist');
       } else {
         toast.error('Failed to add stock to watchlist');

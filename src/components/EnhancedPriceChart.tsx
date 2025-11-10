@@ -9,8 +9,9 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  Area,
 } from 'recharts';
+import type { TooltipProps } from 'recharts';
+import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent';
 import {
   calculateSMA,
   calculateEMA,
@@ -25,6 +26,27 @@ interface EnhancedPriceChartProps {
   data: PriceData[];
   indicators: IndicatorConfig;
 }
+
+const EnhancedTooltip = ({ active, payload }: TooltipProps<ValueType, NameType>) => {
+  if (active && payload && payload.length) {
+    const [{ payload: firstPayload }] = payload;
+    return (
+      <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
+        <p className="text-muted-foreground text-xs mb-2">{(firstPayload as { date?: string })?.date}</p>
+        {payload.map((entry, index) => {
+          const color = typeof entry.color === 'string' ? entry.color : undefined;
+          const value = typeof entry.value === 'number' ? entry.value.toFixed(2) : entry.value;
+          return (
+            <p key={index} className="text-sm" style={{ color }}>
+              <span className="font-medium">{entry.name}:</span> {value ?? '—'}
+            </p>
+          );
+        })}
+      </div>
+    );
+  }
+  return null;
+};
 
 export function EnhancedPriceChart({ symbol, data, indicators }: EnhancedPriceChartProps) {
   const chartData = useMemo(() => {
@@ -71,22 +93,6 @@ export function EnhancedPriceChart({ symbol, data, indicators }: EnhancedPriceCh
     });
   }, [data, indicators]);
 
-  const CustomTooltip = ({ active, payload }: any) => {
-    if (active && payload && payload.length) {
-      return (
-        <div className="bg-card border border-border rounded-lg p-3 shadow-lg">
-          <p className="text-muted-foreground text-xs mb-2">{payload[0].payload.date}</p>
-          {payload.map((entry: any, index: number) => (
-            <p key={index} className="text-sm" style={{ color: entry.color }}>
-              <span className="font-medium">{entry.name}:</span> ${entry.value?.toFixed(2)}
-            </p>
-          ))}
-        </div>
-      );
-    }
-    return null;
-  };
-
   return (
     <Card>
       <CardHeader>
@@ -104,7 +110,7 @@ export function EnhancedPriceChart({ symbol, data, indicators }: EnhancedPriceCh
               tick={{ fill: '#9ca3af', fontSize: 12 }}
               domain={['dataMin - 5', 'dataMax + 5']}
             />
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={<EnhancedTooltip />} />
             <Legend />
 
             {/* Bollinger Bands */}

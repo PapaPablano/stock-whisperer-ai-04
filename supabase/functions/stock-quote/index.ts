@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { supabaseAdmin } from '../_shared/supabaseAdminClient.ts'
 
 const corsHeaders = {
@@ -64,7 +63,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { symbol } = await req.json()
+    const body = (await req.json()) as { symbol?: string } | null
+    const symbol = body?.symbol
     
     if (!symbol) {
       return new Response(

@@ -1,16 +1,18 @@
 import { useState, useMemo } from 'react';
-import { 
-  ComposedChart, 
-  Bar, 
-  Line, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
-  Legend, 
+import {
+  ComposedChart,
+  Bar,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
   ResponsiveContainer,
-  Cell
+  Cell,
 } from 'recharts';
+import type { TooltipProps } from 'recharts';
+import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
 import { Button } from '@/components/ui/button';
 
 export interface OHLCData {
@@ -31,9 +33,33 @@ interface CandlestickChartProps {
 
 export type TimeFrame = '1D' | '5D' | '1M' | '3M' | '6M' | '1Y' | '5Y' | 'MAX';
 
+type CandlestickPayload = OHLCData & {
+  dateLabel: string;
+  range: [number, number];
+  body: [number, number];
+  volumeMA?: number | null;
+};
+
+interface CandlestickBarProps {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  payload?: CandlestickPayload;
+}
+
 // Custom Candlestick Shape Component
-const CandlestickBar = (props: any) => {
-  const { x, y, width, height, payload } = props;
+const CandlestickBar = ({ x, y, width, height, payload }: CandlestickBarProps) => {
+  if (
+    payload === undefined ||
+    x === undefined ||
+    y === undefined ||
+    width === undefined ||
+    height === undefined
+  ) {
+    return null;
+  }
+
   const { open, close, high, low } = payload;
   
   const isPositive = close >= open;
@@ -76,9 +102,9 @@ const CandlestickBar = (props: any) => {
   );
 };
 
-const CustomTooltip = ({ active, payload }: any) => {
+const CustomTooltip = ({ active, payload }: TooltipProps<ValueType, NameType>) => {
   if (active && payload && payload.length) {
-    const data = payload[0].payload;
+    const data = payload[0].payload as CandlestickPayload;
     const isPositive = data.close >= data.open;
     const change = data.close - data.open;
     const changePercent = ((change / data.open) * 100).toFixed(2);
@@ -149,16 +175,25 @@ export function CandlestickChart({
 
   // Calculate volume moving average (20-period)
   const volumeMA = useMemo(() => {
-    if (!showVolume || !data.some(d => d.volume)) return [];
-    
+    if (!showVolume || !data.some(d => d.volume)) return [] as Array<number | null>;
+
     const period = 20;
     return data.map((_, index) => {
       if (index < period - 1) return null;
-      const sum = data.slice(index - period + 1, index + 1)
-        .reduce((acc, d) => acc + (d.volume || 0), 0);
+      const sum = data
+        .slice(index - period + 1, index + 1)
+        .reduce((acc, d) => acc + (d.volume ?? 0), 0);
       return sum / period;
     });
   }, [data, showVolume]);
+
+  const chartDataWithVolumeMA = useMemo(() => {
+    if (volumeMA.length === 0) return chartData;
+    return chartData.map((item, index) => ({
+      ...item,
+      volumeMA: volumeMA[index] ?? null,
+    }));
+  }, [chartData, volumeMA]);
 
   return (
     <div className="w-full">
@@ -208,7 +243,7 @@ export function CandlestickChart({
         {/* Volume Chart */}
         {showVolume && (
           <ResponsiveContainer width="100%" height={height * 0.3} className="mt-4">
-            <ComposedChart data={chartData}>
+            <ComposedChart data={chartDataWithVolumeMA}>
               <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
               <XAxis 
                 dataKey="dateLabel" 
@@ -229,7 +264,7 @@ export function CandlestickChart({
                 labelStyle={{ color: '#9ca3af' }}
               />
               <Bar dataKey="volume" name="Volume">
-                {chartData.map((entry, index) => (
+                {chartDataWithVolumeMA.map((entry, index) => (
                   <Cell 
                     key={`cell-${index}`} 
                     fill={entry.close >= entry.open ? '#10b98180' : '#ef444480'} 
@@ -239,7 +274,6 @@ export function CandlestickChart({
               {volumeMA.length > 0 && (
                 <Line 
                   type="monotone" 
-                  data={chartData.map((d, i) => ({ ...d, volumeMA: volumeMA[i] }))}
                   dataKey="volumeMA" 
                   stroke="#8b5cf6" 
                   strokeWidth={2}

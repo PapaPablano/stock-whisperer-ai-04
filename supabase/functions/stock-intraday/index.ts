@@ -1,8 +1,31 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+type IntradayPoint = {
+  datetime: string;
+  date: string;
+  time: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+  volume: number | null;
+};
+
+interface MarketstackIntradayResponse {
+  data?: Array<{
+    date: string;
+    open: number | null;
+    high: number | null;
+    low: number | null;
+    close: number | null;
+    volume: number | null;
+  }>;
+  error?: {
+    code?: string;
+  };
 }
 
 Deno.serve(async (req) => {
@@ -11,7 +34,10 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { symbol, interval = '1min', range = '1d' } = await req.json()
+    const body = (await req.json()) as { symbol?: string; interval?: string; range?: string } | null
+    const symbol = body?.symbol
+    const interval = body?.interval ?? '1min'
+    const range = body?.range ?? '1d'
     
     if (!symbol) {
       return new Response(
@@ -69,16 +95,16 @@ Deno.serve(async (req) => {
             marketstackInterval = '1min'
         }
 
-        const marketstackResponse = await fetch(
+          const marketstackResponse = await fetch(
           `http://api.marketstack.com/v2/intraday?access_key=${marketstackApiKey}&symbols=${symbol}&interval=${marketstackInterval}&date_from=${fromDate}&date_to=${toDate}&limit=1000`
         )
         
         if (marketstackResponse.ok) {
-          const marketstackData = await marketstackResponse.json()
+          const marketstackData = (await marketstackResponse.json()) as MarketstackIntradayResponse
           
           if (marketstackData.data && marketstackData.data.length > 0) {
             const intradayData = marketstackData.data
-              .map((item: any) => ({
+              .map<IntradayPoint>((item) => ({
                 datetime: item.date, // Full datetime string
                 date: item.date.split('T')[0], // Date only
                 time: item.date.split('T')[1]?.split('+')[0] || '', // Time only
@@ -88,7 +114,7 @@ Deno.serve(async (req) => {
                 close: item.close,
                 volume: item.volume,
               }))
-              .sort((a: any, b: any) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime()) // Sort chronologically
+              .sort((a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime()) // Sort chronologically
 
             console.log(`Successfully fetched ${intradayData.length} intraday records from Marketstack`)
             return new Response(
@@ -103,7 +129,7 @@ Deno.serve(async (req) => {
           }
         } else {
           // Handle specific Marketstack errors
-          const errorData = await marketstackResponse.json().catch(() => null)
+          const errorData = (await marketstackResponse.json().catch(() => null)) as MarketstackIntradayResponse | null
           if (errorData?.error?.code === 'function_access_restricted') {
             throw new Error('Intraday data requires Marketstack paid plan')
           }
@@ -113,7 +139,7 @@ Deno.serve(async (req) => {
         console.log(`Marketstack intraday failed for ${symbol}:`, marketstackError)
         
         // Return specific error for paid feature
-        if (marketstackError.message?.includes('paid plan')) {
+        if (marketstackError instanceof Error && marketstackError.message.includes('paid plan')) {
           return new Response(
             JSON.stringify({ 
               error: 'Intraday data requires Marketstack paid plan. Falling back to end-of-day data.',

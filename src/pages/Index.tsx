@@ -1,17 +1,54 @@
 import { Header } from "@/components/Header";
 import { StockCard } from "@/components/StockCard";
 import { MetricCard } from "@/components/MetricCard";
-import { TechnicalIndicator } from "@/components/TechnicalIndicator";
 import { TechnicalAnalysisDashboard } from "@/components/TechnicalAnalysisDashboard";
 import { PriceChart } from "@/components/PriceChart";
-import { VolumeChart } from "@/components/VolumeChart";
-import { featuredStocks, technicalIndicators, keyMetrics } from "@/lib/mockData";
+import { featuredStocks } from "@/lib/mockData";
 import { TrendingUp, DollarSign, BarChart3, Activity } from "lucide-react";
 import { useStockQuote } from "@/hooks/useStockQuote";
 import { useStockHistorical } from "@/hooks/useStockHistorical";
 import { useState, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
 import type { PriceData } from "@/lib/technicalIndicators";
+
+const formatCurrency = (value?: number | null) => {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+};
+
+const formatCurrencyWithSign = (value?: number | null) => {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    signDisplay: "always",
+  }).format(value);
+};
+
+const formatPercent = (value?: number | null) => {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  return new Intl.NumberFormat("en-US", {
+    style: "percent",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    signDisplay: "always",
+  }).format(value / 100);
+};
+
+const formatCompactNumber = (value?: number | null) => {
+  if (value === null || value === undefined || Number.isNaN(value)) return "—";
+  return new Intl.NumberFormat("en-US", {
+    notation: "compact",
+    maximumFractionDigits: 2,
+  }).format(value);
+};
 
 const Index = () => {
   const [selectedSymbol, setSelectedSymbol] = useState("AAPL");
@@ -107,7 +144,7 @@ const Index = () => {
     if (!calculationData || calculationData.length === 0) return [];
     
     const today = new Date();
-    let cutoffDate = new Date();
+  const cutoffDate = new Date();
     
     switch(dateRange) {
       case '1d':
@@ -155,6 +192,134 @@ const Index = () => {
     }));
   }, [displayData]);
 
+  const { low52Week, high52Week } = useMemo(() => {
+    if (!calculationData.length) {
+      return { low52Week: null as number | null, high52Week: null as number | null };
+    }
+
+    const cutoff = new Date();
+    cutoff.setFullYear(cutoff.getFullYear() - 1);
+
+    let hasData = false;
+    let low = Number.POSITIVE_INFINITY;
+    let high = Number.NEGATIVE_INFINITY;
+
+    calculationData.forEach((point) => {
+      const pointDate = new Date(point.date);
+      if (pointDate >= cutoff) {
+        hasData = true;
+        if (point.low !== undefined && point.low !== null) {
+          low = Math.min(low, point.low);
+        } else {
+          low = Math.min(low, point.close);
+        }
+
+        if (point.high !== undefined && point.high !== null) {
+          high = Math.max(high, point.high);
+        } else {
+          high = Math.max(high, point.close);
+        }
+      }
+    });
+
+    if (!hasData || !Number.isFinite(low) || !Number.isFinite(high)) {
+      return { low52Week: null, high52Week: null };
+    }
+
+    return { low52Week: low, high52Week: high };
+  }, [calculationData]);
+
+  const averageVolume30 = useMemo(() => {
+    if (!calculationData.length) return null;
+    const sliceStart = Math.max(calculationData.length - 30, 0);
+    const recent = calculationData.slice(sliceStart);
+    if (!recent.length) return null;
+    const total = recent.reduce((sum, point) => sum + (point.volume ?? 0), 0);
+    return total / recent.length;
+  }, [calculationData]);
+
+  const keyMetrics = useMemo(() => {
+    const change = liveQuote?.change ?? null;
+    const changePercent = liveQuote?.changePercent ?? null;
+    const trend: "up" | "down" | "neutral" | undefined = change === null
+      ? undefined
+      : change > 0
+        ? "up"
+        : change < 0
+          ? "down"
+          : "neutral";
+
+    const changeSubtitle = (() => {
+      if (change === null && changePercent === null) return "—";
+      const parts: string[] = [];
+      if (change !== null) {
+        parts.push(formatCurrencyWithSign(change));
+      }
+      if (changePercent !== null) {
+        parts.push(formatPercent(changePercent));
+      }
+      return parts.join(" ");
+    })();
+
+    const dayRange = liveQuote?.low !== null && liveQuote?.low !== undefined && liveQuote?.high !== null && liveQuote?.high !== undefined
+      ? `${formatCurrency(liveQuote.low)} – ${formatCurrency(liveQuote.high)}`
+      : "—";
+
+    const week52Range = low52Week !== null && high52Week !== null
+      ? `${formatCurrency(low52Week)} – ${formatCurrency(high52Week)}`
+      : "—";
+
+    const volumeValue = liveQuote?.volume !== null && liveQuote?.volume !== undefined
+      ? formatCompactNumber(liveQuote.volume)
+      : "—";
+
+    const avgVolumeValue = averageVolume30 !== null
+      ? formatCompactNumber(averageVolume30)
+      : "—";
+
+    return [
+      {
+        title: "Last Price",
+        value: formatCurrency(liveQuote?.price ?? null),
+        subtitle: changeSubtitle,
+        icon: DollarSign,
+        trend,
+      },
+      {
+        title: "Day Range",
+        value: dayRange,
+        subtitle: liveQuote?.open !== null && liveQuote?.open !== undefined
+          ? `Open ${formatCurrency(liveQuote.open)}`
+          : undefined,
+        icon: TrendingUp,
+      },
+      {
+        title: "52W Range",
+        value: week52Range,
+        subtitle: "Based on the past 52 weeks",
+        icon: BarChart3,
+      },
+      {
+        title: "Volume",
+        value: volumeValue,
+        subtitle: "Today",
+        icon: Activity,
+      },
+      {
+        title: "Avg Volume (30d)",
+        value: avgVolumeValue,
+        subtitle: "Trailing 30 sessions",
+        icon: Activity,
+      },
+      {
+        title: "Previous Close",
+        value: formatCurrency(liveQuote?.previousClose ?? null),
+        subtitle: liveQuote?.source ? `Source: ${liveQuote.source}` : undefined,
+        icon: DollarSign,
+      },
+    ];
+  }, [liveQuote, low52Week, high52Week, averageVolume30]);
+
   const handleSymbolSelect = (symbol: string) => {
     setSelectedSymbol(symbol.toUpperCase());
   };
@@ -186,6 +351,11 @@ const Index = () => {
         <section className="space-y-4">
           <div className="flex items-center gap-3">
             <h2 className="text-2xl font-bold">{selectedSymbol}</h2>
+            {liveQuote?.name && (
+              <Badge variant="secondary" className="text-sm">
+                {liveQuote.name}
+              </Badge>
+            )}
             {liveQuote && (
               <>
                 <Badge variant="outline" className="text-lg">
@@ -214,36 +384,16 @@ const Index = () => {
         <section>
           <h3 className="text-lg font-semibold mb-4">Key Metrics</h3>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            <MetricCard
-              title="Market Cap"
-              value={keyMetrics.marketCap}
-              icon={DollarSign}
-            />
-            <MetricCard
-              title="P/E Ratio"
-              value={keyMetrics.peRatio}
-              icon={BarChart3}
-            />
-            <MetricCard
-              title="52W High"
-              value={keyMetrics.fiftyTwoWeekHigh}
-              trend="up"
-              icon={TrendingUp}
-            />
-            <MetricCard
-              title="52W Low"
-              value={keyMetrics.fiftyTwoWeekLow}
-              trend="down"
-            />
-            <MetricCard
-              title="Div Yield"
-              value={keyMetrics.dividendYield}
-              icon={Activity}
-            />
-            <MetricCard
-              title="Beta"
-              value={keyMetrics.beta}
-            />
+            {keyMetrics.map((metric) => (
+              <MetricCard
+                key={metric.title}
+                title={metric.title}
+                value={metric.value}
+                subtitle={metric.subtitle}
+                icon={metric.icon}
+                trend={metric.trend}
+              />
+            ))}
           </div>
         </section>
 
