@@ -27,7 +27,7 @@ interface UseStockIntradayOptions {
 export const useStockIntraday = (
   symbol: string,
   interval: Interval = '1m',
-  range: '1d' | '5d' | '1w' = '1d',
+  range: '1d' | '5d' | '1w' | '1mo' | '3mo' | '6mo' | '1y' | '2y' = '1d',
   options?: UseStockIntradayOptions,
 ) => {
   return useQuery({
@@ -41,7 +41,7 @@ export const useStockIntraday = (
       return data as IntradayResponse;
     },
     enabled: !!symbol && (options?.enabled ?? true),
-    staleTime: 30 * 1000, // Consider data fresh for 30 seconds (real-time data)
-    refetchInterval: 60 * 1000, // Refetch every minute for real-time updates
+    staleTime: 45 * 1000,
+    refetchInterval: 60 * 1000,
   });
 };

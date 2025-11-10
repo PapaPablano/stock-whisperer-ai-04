@@ -15,6 +15,7 @@ type Options = {
   maxBars?: number;
   session?: "EQUITY_RTH" | "FUTURES_EXT" | "CRYPTO_247";
   historyRange?: string;
+  intradayRange?: "1d" | "5d" | "1w" | "1mo" | "3mo" | "6mo" | "1y" | "2y";
 };
 
 const normalizeInterval = (value?: string) =>
@@ -36,6 +37,7 @@ export const useUnifiedChartData = (
   const tz = SESSIONS[session].tz;
   const maxBars = opts.maxBars ?? 5000;
   const historyRange = opts.historyRange ?? "5y";
+  const intradayRange = opts.intradayRange ?? "2y";
 
   const isDaily = interval === "1d";
   const {
@@ -47,7 +49,7 @@ export const useUnifiedChartData = (
     data: intra,
     isLoading: li,
     error: ei,
-  } = useStockIntraday(symbol, interval, "1d", { enabled: !isDaily });
+  } = useStockIntraday(symbol, interval, intradayRange, { enabled: !isDaily });
 
   const loading = isDaily ? ld : li;
   const error = isDaily ? ed : ei;

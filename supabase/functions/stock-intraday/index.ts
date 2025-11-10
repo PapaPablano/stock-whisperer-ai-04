@@ -1,3 +1,5 @@
+import { supabaseAdmin } from '../_shared/supabaseAdminClient.ts'
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-application-name',
@@ -31,6 +33,14 @@ interface PolygonAggsResponse {
   message?: string;
 }
 
+const CACHE_PREFIX = 'intraday'
+const CACHE_TTL_MS = 45 * 1000
+const MIN_FETCH_INTERVAL_MS = 250
+const MAX_RETRIES = 5
+const BASE_BACKOFF_MS = 400
+const MAX_BACKOFF_MS = 12_000
+const JITTER_MS = 250
+
 const INTERVAL_MAP = new Map<string, { multiplier: number; timeframe: 'minute' | 'hour' }>([
   ['1m', { multiplier: 1, timeframe: 'minute' }],
   ['5m', { multiplier: 5, timeframe: 'minute' }],
@@ -40,6 +50,15 @@ const INTERVAL_MAP = new Map<string, { multiplier: number; timeframe: 'minute' |
   ['1h', { multiplier: 1, timeframe: 'hour' }],
   ['4h', { multiplier: 4, timeframe: 'hour' }],
 ]);
+
+interface CachePayload {
+  data: IntradayPoint[]
+  source: string
+  interval: string
+  symbol: string
+  range: string
+  cachedAt: string
+}
 
 const computeRangeCutoff = (range: string | undefined, endDate: Date): number | null => {
   if (!range) return null;
@@ -75,6 +94,98 @@ const computeRangeCutoff = (range: string | undefined, endDate: Date): number | 
   return cutoff.getTime();
 };
 
+const cacheKeyFor = (symbol: string, interval: string, range: string) =>
+  `${CACHE_PREFIX}:${symbol.toUpperCase()}:${interval}:${range}`
+
+const readCache = async (key: string): Promise<CachePayload | null> => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('stock_cache')
+      .select('data, last_updated')
+      .eq('cache_key', key)
+      .maybeSingle()
+
+    if (error || !data?.data) {
+      return null
+    }
+
+    const lastUpdated = data.last_updated ? new Date(data.last_updated).getTime() : 0
+    if (!lastUpdated) {
+      return null
+    }
+
+    if (Date.now() - lastUpdated > CACHE_TTL_MS) {
+      return null
+    }
+
+    return data.data as CachePayload
+  } catch (error) {
+    console.error('intraday cache read failed', error)
+    return null
+  }
+}
+
+const writeCache = async (key: string, payload: CachePayload) => {
+  try {
+    await supabaseAdmin
+      .from('stock_cache')
+      .upsert(
+        {
+          cache_key: key,
+          data: payload,
+          last_updated: new Date().toISOString(),
+        },
+        { onConflict: 'cache_key' },
+      )
+  } catch (error) {
+    console.error('intraday cache write failed', error)
+  }
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+const createRateLimitedFetcher = () => {
+  let lastRequestTimestamp = 0
+
+  const waitForSlot = async () => {
+    const now = Date.now()
+    const earliest = lastRequestTimestamp + MIN_FETCH_INTERVAL_MS
+    const wait = Math.max(0, earliest - now)
+    if (wait > 0) {
+      await sleep(wait)
+    }
+    lastRequestTimestamp = Date.now()
+  }
+
+  const fetchWithRetry = async (url: string, attempt = 0): Promise<Response> => {
+    await waitForSlot()
+
+    const response = await fetch(url)
+    if (response.status === 429) {
+      if (attempt >= MAX_RETRIES - 1) {
+        return response
+      }
+      const retryAfterHeader = response.headers.get('retry-after')
+      const retryAfterSeconds = retryAfterHeader ? Number.parseFloat(retryAfterHeader) : undefined
+      const backoff = retryAfterSeconds && !Number.isNaN(retryAfterSeconds)
+        ? retryAfterSeconds * 1000
+        : Math.min(BASE_BACKOFF_MS * 2 ** attempt, MAX_BACKOFF_MS)
+      await sleep(backoff + Math.random() * JITTER_MS)
+      return fetchWithRetry(url, attempt + 1)
+    }
+
+    if (!response.ok && response.status >= 500 && attempt < MAX_RETRIES - 1) {
+      const backoff = Math.min(BASE_BACKOFF_MS * 2 ** attempt, MAX_BACKOFF_MS)
+      await sleep(backoff + Math.random() * JITTER_MS)
+      return fetchWithRetry(url, attempt + 1)
+    }
+
+    return response
+  }
+
+  return fetchWithRetry
+}
+
 const buildPolygonUrl = (
   symbol: string,
   multiplier: number,
@@ -105,7 +216,7 @@ Deno.serve(async (req) => {
   try {
     const body = (await req.json()) as { symbol?: string; interval?: string; range?: string } | null
     const symbol = body?.symbol
-  const interval = body?.interval ?? '1m'
+    const interval = body?.interval ?? '1m'
     const range = body?.range ?? '1d'
     
     if (!symbol) {
@@ -134,15 +245,35 @@ Deno.serve(async (req) => {
       )
     }
 
-    const endDate = new Date()
-    const startDate = new Date()
-    startDate.setFullYear(endDate.getFullYear() - 2)
+  const endDate = new Date()
+  const defaultStart = new Date(endDate)
+  defaultStart.setFullYear(endDate.getFullYear() - 2)
 
-    const fromDate = startDate.toISOString().split('T')[0]
-    const toDate = endDate.toISOString().split('T')[0]
-    const cutoffTimestamp = computeRangeCutoff(range, endDate)
+  const cutoffTimestamp = computeRangeCutoff(range, endDate)
+  const startDate = cutoffTimestamp ? new Date(cutoffTimestamp) : defaultStart
+  const fromDate = startDate.toISOString().split('T')[0]
+  const toDate = endDate.toISOString().split('T')[0]
 
     const polygonSymbol = symbol.toUpperCase()
+    const cacheKey = cacheKeyFor(polygonSymbol, interval, range)
+
+    const cached = await readCache(cacheKey)
+    if (cached) {
+      console.log(`Serving intraday cache hit for ${polygonSymbol} ${interval} ${range}`)
+      return new Response(
+        JSON.stringify({
+          data: cached.data,
+          source: cached.source,
+          interval: cached.interval,
+          symbol: cached.symbol,
+          cacheHit: true,
+          cachedAt: cached.cachedAt,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'public, max-age=30' } }
+      )
+    }
+
+    const fetchPolygon = createRateLimitedFetcher()
     const results: PolygonAggsResult[] = []
 
     let cursor: string | null = null
@@ -157,7 +288,7 @@ Deno.serve(async (req) => {
     )
 
     while (url) {
-      const polygonResponse = await fetch(url)
+      const polygonResponse = await fetchPolygon(url)
       if (!polygonResponse.ok) {
         const errorBody = await polygonResponse.text()
         throw new Error(`Polygon API error (${polygonResponse.status}): ${errorBody}`)
@@ -218,6 +349,15 @@ Deno.serve(async (req) => {
     })
 
     console.log(`Polygon returned ${intradayData.length} intraday points for ${symbol}`)
+
+    await writeCache(cacheKey, {
+      data: intradayData,
+      source: 'polygon',
+      interval,
+      symbol: polygonSymbol,
+      range,
+      cachedAt: new Date().toISOString(),
+    })
 
     return new Response(
       JSON.stringify({
