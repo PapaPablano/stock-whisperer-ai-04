@@ -14,6 +14,7 @@ export interface SuperTrendAISeriesPoint {
   distance: number | null;
   targetFactor: number | null;
   targetFactorHistory?: number;
+  atr?: number | null;
 }
 
 export interface SuperTrendAIOptions {
@@ -684,6 +685,7 @@ export const calculateSuperTrendAI = (
     const amaRaw = safePreviousAma + alpha * (targetValue - safePreviousAma);
     const ama = Number.isFinite(amaRaw) ? amaRaw : safePreviousAma;
     const distance = supertrendValue !== null ? point.close - supertrendValue : null;
+    const atrValue = Number.isFinite(atr[index]) ? atr[index] : null;
 
     series.push({
       date: point.date,
@@ -697,6 +699,7 @@ export const calculateSuperTrendAI = (
       distance,
       targetFactor,
       targetFactorHistory: targetFactor,
+      atr: atrValue,
     });
   }
 
