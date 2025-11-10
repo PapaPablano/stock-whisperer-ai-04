@@ -471,20 +471,26 @@ export const calculateSuperTrendAI = (
   const lowerBandsByFactor: number[][] = [];
 
   factors.forEach((factor) => {
-    const { supertrend, trend, finalUpper, finalLower } = calculateSupertrendForFactor(data, atr, factor);
+    const { supertrend, trend, finalUpper, finalLower } = calculateSupertrendForFactor(dataSlice, atr, factor);
     supertrendsByFactor.push(supertrend);
     trendsByFactor.push(trend);
     upperBandsByFactor.push(finalUpper);
     lowerBandsByFactor.push(finalLower);
 
-    const performance = calculatePerformance(data, supertrend, trend, config.perfAlpha);
+    const performance = calculatePerformance(dataSlice, supertrend, trend, config.perfAlpha);
     performances.push(performance);
   });
 
-  let targetFactor = config.minMultiplier;
+  if (performances.length === 0) {
+    return createEmptyResult(config, dataOffset);
+  }
+
   let clusters: Record<number, number[]> = { 0: [], 1: [], 2: [] };
   let perfClusters: Record<number, number[]> = { 0: [], 1: [], 2: [] };
   let clusterMapping: Record<number, "Best" | "Average" | "Worst"> = {};
+  let targetFactor = config.minMultiplier;
+  let selectedClusterId: number | null = null;
+  let selectedClusterLabel: "Best" | "Average" | "Worst" | null = null;
 
   if (performances.length < 3) {
     const bestIdx = performances.reduce((best, value, idx, array) => (
