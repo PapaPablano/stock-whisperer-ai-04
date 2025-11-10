@@ -14,18 +14,10 @@ import {
 import type { TooltipProps } from 'recharts';
 import type { NameType, ValueType } from 'recharts/types/component/DefaultTooltipContent';
 import { Button } from '@/components/ui/button';
-
-export interface OHLCData {
-  time: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume?: number;
-}
+import { toSeries, type OhlcPoint } from './chartTypes';
 
 interface CandlestickChartProps {
-  data: OHLCData[];
+  data: unknown[];
   height?: number;
   showVolume?: boolean;
   onTimeFrameChange?: (timeFrame: TimeFrame) => void;
@@ -33,7 +25,7 @@ interface CandlestickChartProps {
 
 export type TimeFrame = '1D' | '5D' | '1M' | '3M' | '6M' | '1Y' | '5Y' | 'MAX';
 
-type CandlestickPayload = OHLCData & {
+type CandlestickPayload = OhlcPoint & {
   dateLabel: string;
   range: [number, number];
   body: [number, number];
@@ -111,7 +103,7 @@ const CustomTooltip = ({ active, payload }: TooltipProps<ValueType, NameType>) =
     
     return (
       <div className="bg-gray-900 border border-gray-700 p-3 rounded-lg shadow-lg">
-        <p className="text-gray-400 text-xs mb-2">{new Date(data.time).toLocaleString()}</p>
+        <p className="text-gray-400 text-xs mb-2">{new Date(data.date).toLocaleString()}</p>
         <div className="space-y-1 text-sm">
           <p className="flex justify-between gap-4">
             <span className="text-gray-400">Open:</span>
@@ -158,15 +150,17 @@ export function CandlestickChart({
 
   const timeFrames: TimeFrame[] = ['1D', '5D', '1M', '3M', '6M', '1Y', '5Y', 'MAX'];
 
+  const series = useMemo(() => toSeries(data), [data]);
+
   // Process data for visualization
   const chartData = useMemo(() => {
-    return data.map(item => ({
+    return series.map(item => ({
       ...item,
-      dateLabel: new Date(item.time).toLocaleDateString(),
+      dateLabel: new Date(item.date).toLocaleDateString(),
       range: [item.low, item.high],
       body: [Math.min(item.open, item.close), Math.max(item.open, item.close)],
     }));
-  }, [data]);
+  }, [series]);
 
   const handleTimeFrameChange = (timeFrame: TimeFrame) => {
     setSelectedTimeFrame(timeFrame);
@@ -175,17 +169,17 @@ export function CandlestickChart({
 
   // Calculate volume moving average (20-period)
   const volumeMA = useMemo(() => {
-    if (!showVolume || !data.some(d => d.volume)) return [] as Array<number | null>;
+    if (!showVolume || !series.some(d => d.volume !== undefined)) return [] as Array<number | null>;
 
     const period = 20;
-    return data.map((_, index) => {
+    return series.map((_, index) => {
       if (index < period - 1) return null;
-      const sum = data
+      const sum = series
         .slice(index - period + 1, index + 1)
         .reduce((acc, d) => acc + (d.volume ?? 0), 0);
       return sum / period;
     });
-  }, [data, showVolume]);
+  }, [series, showVolume]);
 
   const chartDataWithVolumeMA = useMemo(() => {
     if (volumeMA.length === 0) return chartData;
