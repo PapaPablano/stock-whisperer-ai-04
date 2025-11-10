@@ -440,6 +440,7 @@ interface SuperTrendAIChartProps {
     signal: TrendDirection;
     trend: TrendDirection;
     distance: number | null;
+    atr: number | null;
   }>;
   meta: SuperTrendAIInfo | null;
   symbol: string;

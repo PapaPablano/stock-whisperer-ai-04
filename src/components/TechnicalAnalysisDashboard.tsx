@@ -30,6 +30,7 @@ type SuperTrendAIChartPoint = {
   signal: TrendDirection;
   trend: TrendDirection;
   distance: number | null;
+  atr: number | null;
 };
 
 interface TechnicalAnalysisDashboardProps {
@@ -167,6 +168,7 @@ export function TechnicalAnalysisDashboard({ symbol, data, displayData }: Techni
             signal: rawPoint.signal,
             trend: rawPoint.trend,
             distance: rawPoint.distance,
+            atr: rawPoint.atr ?? null,
           };
         }).filter((value): value is {
           date: string;
@@ -179,6 +181,7 @@ export function TechnicalAnalysisDashboard({ symbol, data, displayData }: Techni
           signal: TrendDirection;
           trend: TrendDirection;
           distance: number | null;
+          atr: number | null;
         } => value !== null)
       : [];
 
