@@ -501,6 +501,8 @@ export const calculateSuperTrendAI = (
     clusters[0] = [...factors];
     perfClusters[0] = [...performances];
     clusterMapping = { 0: "Average" };
+    selectedClusterId = 0;
+    selectedClusterLabel = "Average";
   } else {
     const q25 = percentile(performances, 0.25);
     const q50 = percentile(performances, 0.5);
@@ -530,12 +532,32 @@ export const calculateSuperTrendAI = (
         [sortedClusters[1].id]: "Average",
         [sortedClusters[2].id]: "Best",
       };
+    } else {
+      sortedClusters.forEach((entry, index) => {
+        if (index === 0) {
+          clusterMapping[entry.id] = "Worst";
+        } else if (index === sortedClusters.length - 1) {
+          clusterMapping[entry.id] = "Best";
+        } else {
+          clusterMapping[entry.id] = "Average";
+        }
+      });
     }
 
-    const targetLabel = Object.entries(clusterMapping).find(([, label]) => label === config.fromCluster)?.[0];
+    let targetClusterEntry = Object.entries(clusterMapping).find(([, label]) => label === config.fromCluster);
 
-    if (targetLabel !== undefined) {
-      const labelId = Number(targetLabel);
+    if (!targetClusterEntry && sortedClusters.length > 0) {
+      const fallbackId = sortedClusters[sortedClusters.length - 1]?.id;
+      if (fallbackId !== undefined) {
+        targetClusterEntry = [String(fallbackId), clusterMapping[fallbackId] ?? "Best"];
+      }
+    }
+
+    if (targetClusterEntry) {
+      const [id, label] = targetClusterEntry;
+      const labelId = Number(id);
+      selectedClusterId = labelId;
+      selectedClusterLabel = label ?? null;
       const selectedFactors = clusters[labelId];
       const meanFactor = selectedFactors.length > 0
         ? selectedFactors.reduce((sum, value) => sum + value, 0) / selectedFactors.length
