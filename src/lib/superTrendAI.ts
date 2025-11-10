@@ -209,8 +209,16 @@ const calculateSupertrendForFactor = (
     return { supertrend, trend, finalUpper, finalLower };
   }
 
-  const upperBand = data.map((point, idx) => ((point.high + point.low) / 2) + atr[idx] * factor);
-  const lowerBand = data.map((point, idx) => ((point.high + point.low) / 2) - atr[idx] * factor);
+  const upperBand = data.map((point, idx) => {
+    const basis = (point.high + point.low) / 2;
+    const atrValue = Number.isFinite(atr[idx]) ? atr[idx] : 0;
+    return basis + atrValue * factor;
+  });
+  const lowerBand = data.map((point, idx) => {
+    const basis = (point.high + point.low) / 2;
+    const atrValue = Number.isFinite(atr[idx]) ? atr[idx] : 0;
+    return basis - atrValue * factor;
+  });
 
   finalUpper[0] = upperBand[0];
   finalLower[0] = lowerBand[0];
