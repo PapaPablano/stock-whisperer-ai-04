@@ -40,6 +40,8 @@ const MAX_RETRIES = 5
 const BASE_BACKOFF_MS = 400
 const MAX_BACKOFF_MS = 12_000
 const JITTER_MS = 250
+const MAX_POLYGON_CALLS_PER_MINUTE = 5
+const RATE_LIMIT_KEY = `${CACHE_PREFIX}:polygon:budget`
 
 const INTERVAL_MAP = new Map<string, { multiplier: number; timeframe: 'minute' | 'hour' }>([
   ['1m', { multiplier: 1, timeframe: 'minute' }],
@@ -144,6 +146,48 @@ const writeCache = async (key: string, payload: CachePayload) => {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
+const getCurrentWindowStartIso = () => {
+  const now = new Date()
+  const truncated = new Date(Math.floor(now.getTime() / 60_000) * 60_000)
+  return truncated.toISOString()
+}
+
+const ensurePolygonRateLimitBudget = async (): Promise<boolean> => {
+  try {
+    const windowStartIso = getCurrentWindowStartIso()
+    const { data, error } = await supabaseAdmin
+      .from('stock_cache')
+      .select('data')
+      .eq('cache_key', RATE_LIMIT_KEY)
+      .maybeSingle()
+
+    const currentCount = data?.data?.windowStart === windowStartIso ? data.data.count ?? 0 : 0
+
+    if (currentCount >= MAX_POLYGON_CALLS_PER_MINUTE) {
+      return false
+    }
+
+    await supabaseAdmin
+      .from('stock_cache')
+      .upsert(
+        {
+          cache_key: RATE_LIMIT_KEY,
+          data: {
+            windowStart: windowStartIso,
+            count: currentCount + 1,
+          },
+          last_updated: new Date().toISOString(),
+        },
+        { onConflict: 'cache_key' },
+      )
+
+    return true
+  } catch (error) {
+    console.error('Unable to persist Polygon rate-limit state', error)
+    return true
+  }
+}
+
 const createRateLimitedFetcher = () => {
   let lastRequestTimestamp = 0
 
@@ -159,6 +203,11 @@ const createRateLimitedFetcher = () => {
 
   const fetchWithRetry = async (url: string, attempt = 0): Promise<Response> => {
     await waitForSlot()
+
+    const hasBudget = await ensurePolygonRateLimitBudget()
+    if (!hasBudget) {
+      return new Response('Polygon call budget exceeded', { status: 429 })
+    }
 
     const response = await fetch(url)
     if (response.status === 429) {
