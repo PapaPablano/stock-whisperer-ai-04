@@ -61,12 +61,14 @@ const RATE_LIMIT_KEY = `${CACHE_PREFIX}:polygon:budget`
 const FINNHUB_API_KEY = Deno.env.get('FINNHUB_API_KEY') ?? ''
 const FINNHUB_CACHE_TTL_MS = Number(Deno.env.get('FINNHUB_CACHE_TTL_MS') ?? '60000')
 const FINNHUB_REQUEST_DEDUP = (Deno.env.get('FINNHUB_REQUEST_DEDUP') ?? 'true').toLowerCase() !== 'false'
+const FINNHUB_SECRET_HEADER_VALUE = Deno.env.get('FINNHUB_SECRET_HEADER_VALUE') ?? 'd3spf09r01qpdd5knh9g'
 
 const sharedFinnhubClient = FINNHUB_API_KEY
   ? new FinnhubClient({
       apiKey: FINNHUB_API_KEY,
       cacheTtlMs: FINNHUB_CACHE_TTL_MS,
       requestDedup: FINNHUB_REQUEST_DEDUP,
+      extraHeaders: { 'X-Finnhub-Secret': FINNHUB_SECRET_HEADER_VALUE },
     })
   : null
 

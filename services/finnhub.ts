@@ -25,6 +25,7 @@ export type FinnhubParams = {
   baseUrl?: string;
   cacheTtlMs?: number;
   requestDedup?: boolean;
+  extraHeaders?: Record<string, string>;
 };
 
 export type BarRequest = {
@@ -65,12 +66,14 @@ export class FinnhubClient {
   private inFlightRequests: Map<string, Promise<unknown>> = new Map();
   private listeners: Map<FinnhubEventName, Set<(payload: unknown) => void>> = new Map();
   private socket: WebSocket | null = null;
+  private extraHeaders: Record<string, string>;
 
   constructor(params: FinnhubParams) {
     this.apiKey = params.apiKey;
     this.baseUrl = params.baseUrl ?? DEFAULT_BASE_URL;
     this.cacheTtlMs = params.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
     this.requestDedup = params.requestDedup ?? true;
+    this.extraHeaders = params.extraHeaders ?? {};
   }
 
   on<EventName extends FinnhubEventName>(event: EventName, handler: FinnhubEventHandlers[EventName]): void {
@@ -297,6 +300,9 @@ export class FinnhubClient {
   private createHeaders(): Headers {
     const headers = new Headers();
     headers.set("X-Finnhub-Token", this.apiKey);
+    for (const [name, value] of Object.entries(this.extraHeaders)) {
+      headers.set(name, value);
+    }
     return headers;
   }
 }
