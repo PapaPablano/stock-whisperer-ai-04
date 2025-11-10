@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import Plot from "react-plotly.js";
 import type { Layout, Data } from "plotly.js";
 import { useUnifiedChartData } from "@/hooks/useUnifiedChartData";
@@ -9,18 +9,54 @@ interface PlotlyPriceChartProps {
   symbol: string;
   interval: Interval;
   height?: number;
+  onDataReady?: (snapshot: {
+    date: string;
+    close: number;
+    st: number | null;
+    source: string;
+  }) => void;
 }
 
 export const PlotlyPriceChart: React.FC<PlotlyPriceChartProps> = ({
   symbol,
   interval,
   height = 720,
+  onDataReady,
 }) => {
   const { loading, error, dates, ohlc, volume, st, source } = useUnifiedChartData(
     symbol,
     interval,
     { session: "EQUITY_RTH" }
   );
+  const reportedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!onDataReady || loading || error || !dates?.length) {
+      return;
+    }
+    const lastIndex = dates.length - 1;
+    const lastDate = dates[lastIndex];
+    if (!lastDate) {
+      return;
+    }
+    const key = `${lastDate}-${source ?? "unknown"}`;
+    if (reportedRef.current === key) {
+      return;
+    }
+    const lastClose = ohlc.close?.[lastIndex];
+    if (typeof lastClose !== "number" || Number.isNaN(lastClose)) {
+      return;
+    }
+    const series = st?.series ?? [];
+    const stPoint = series.find((point) => point.date === lastDate) ?? series.at(-1) ?? null;
+    onDataReady({
+      date: lastDate,
+      close: lastClose,
+      st: stPoint?.supertrend ?? null,
+      source: source ?? "unknown",
+    });
+    reportedRef.current = key;
+  }, [dates, error, loading, ohlc.close, onDataReady, source, st]);
 
   if (error)
     return (

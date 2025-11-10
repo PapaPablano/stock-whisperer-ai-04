@@ -21,6 +21,7 @@ import {
 } from "@/lib/superTrendAI";
 import { useFeatureFlags } from "@/lib/featureFlags";
 import type { Interval } from "@/lib/aggregateBars";
+import { validateParity } from "@/lib/chartValidator";
 
 const formatCurrency = (value?: number | null) => {
   if (value === null || value === undefined || Number.isNaN(value)) return "—";
@@ -137,6 +138,10 @@ const Index = () => {
   const [candleInterval, setCandleInterval] = useState<CandleInterval>("1d");
   const { data: liveQuote, isLoading: quoteLoading } = useStockQuote(selectedSymbol);
   const { usePlotlyChart } = useFeatureFlags();
+  const [plotlyParitySnapshot, setPlotlyParitySnapshot] = useState<{
+    close: number;
+    st: number | null;
+  } | null>(null);
 
   const intervalMap: Record<CandleInterval, Interval> = {
     "10m": "10m",
@@ -144,6 +149,12 @@ const Index = () => {
     "4h": "4h",
     "1d": "1d",
   };
+
+  useEffect(() => {
+    if (!usePlotlyChart && plotlyParitySnapshot !== null) {
+      setPlotlyParitySnapshot(null);
+    }
+  }, [plotlyParitySnapshot, usePlotlyChart]);
 
   useEffect(() => {
     if (candleInterval === "1d") {
@@ -423,6 +434,43 @@ const Index = () => {
     return total / recent.length;
   }, [calculationData]);
 
+  const legacyParitySnapshot = useMemo(() => {
+    if (priceChartData.length === 0) {
+      return null;
+    }
+    const lastPoint = priceChartData[priceChartData.length - 1];
+    if (!lastPoint) {
+      return null;
+    }
+    const overlayPoint = chartSupertrendResult?.series?.find(
+      (point) => point.date === lastPoint.rawDate
+    );
+    const close = typeof lastPoint.price === "number" ? lastPoint.price : null;
+    const stValue = overlayPoint?.supertrend ?? lastPoint.supertrend ?? null;
+    if (close === null) {
+      return null;
+    }
+    return { close, st: stValue };
+  }, [chartSupertrendResult, priceChartData]);
+
+  useEffect(() => {
+    if (!usePlotlyChart) {
+      return;
+    }
+    if (!legacyParitySnapshot || !plotlyParitySnapshot) {
+      return;
+    }
+    const legacyClose = legacyParitySnapshot.close;
+    const plotlyClose = plotlyParitySnapshot.close;
+    if (!Number.isFinite(legacyClose) || !Number.isFinite(plotlyClose)) {
+      return;
+    }
+    validateParity(
+      selectedSymbol,
+      { close: legacyClose, st: legacyParitySnapshot.st ?? 0 },
+      { close: plotlyClose, st: plotlyParitySnapshot.st ?? 0 }
+    );
+  }, [legacyParitySnapshot, plotlyParitySnapshot, selectedSymbol, usePlotlyChart]);
   const keyMetrics = useMemo(() => {
     const change = liveQuote?.change ?? null;
     const changePercent = liveQuote?.changePercent ?? null;
@@ -598,6 +646,9 @@ const Index = () => {
             <PlotlyPriceChart
               symbol={selectedSymbol}
               interval={intervalMap[candleInterval]}
+              onDataReady={({ close, st }) => {
+                setPlotlyParitySnapshot({ close, st });
+              }}
             />
           ) : (
             <PriceChart
