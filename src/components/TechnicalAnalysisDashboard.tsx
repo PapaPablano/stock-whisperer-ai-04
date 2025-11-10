@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { IndicatorSelector, type IndicatorConfig } from './IndicatorSelector';
-import { RSIChart, MACDChart, StochasticChart, KDJChart, VolumeIndicatorChart } from './IndicatorCharts';
+import { RSIChart, MACDChart, StochasticChart, KDJChart, VolumeIndicatorChart, SuperTrendAIChart } from './IndicatorCharts';
 import {
   calculateRSI,
   calculateMACD,
@@ -13,6 +13,24 @@ import {
   calculateADX,
   type PriceData,
 } from '@/lib/technicalIndicators';
+import {
+  calculateSuperTrendAI,
+  type SuperTrendAIInfo,
+  type TrendDirection,
+} from '@/lib/superTrendAI';
+
+type SuperTrendAIChartPoint = {
+  date: string;
+  rawDate: string;
+  close: number;
+  supertrend: number | null;
+  upperBand: number | null;
+  lowerBand: number | null;
+  ama: number | null;
+  signal: TrendDirection;
+  trend: TrendDirection;
+  distance: number | null;
+};
 
 interface TechnicalAnalysisDashboardProps {
   symbol: string;
@@ -30,6 +48,7 @@ export function TechnicalAnalysisDashboard({ symbol, data, displayData }: Techni
     ema12: false,
     ema26: false,
     ema50: false,
+    supertrendAI: true,
     rsi: true,
     macd: true,
     stochastic: false,
@@ -44,7 +63,18 @@ export function TechnicalAnalysisDashboard({ symbol, data, displayData }: Techni
   });
 
   // Calculate indicators based on selection
-  const indicatorData = useMemo(() => {
+  const indicatorData = useMemo<{
+    rsi: Array<{ date: string; rsi: number | null }>;
+    macd: Array<{ date: string; macd: number | null; signal: number | null; histogram: number | null }>;
+    stochastic: Array<{ date: string; k: number | null; d: number | null }>;
+    kdj: Array<{ date: string; k: number | null; d: number | null; j: number | null }>;
+    obv: Array<{ date: string; value: number | null }>;
+    vroc: Array<{ date: string; value: number | null }>;
+    mfi: Array<{ date: string; value: number | null }>;
+    atr: Array<{ date: string; value: number | null }>;
+    adx: Array<{ date: string; value: number | null }>;
+    supertrendAI: { series: SuperTrendAIChartPoint[]; info: SuperTrendAIInfo | null };
+  }>(() => {
     if (!data || data.length === 0) {
       return {
         rsi: [],
@@ -56,6 +86,10 @@ export function TechnicalAnalysisDashboard({ symbol, data, displayData }: Techni
         mfi: [],
         atr: [],
         adx: [],
+        supertrendAI: {
+          series: [],
+          info: null,
+        },
       };
     }
 
@@ -111,6 +145,43 @@ export function TechnicalAnalysisDashboard({ symbol, data, displayData }: Techni
     
     console.log(`[TechnicalAnalysisDashboard] Filtered ${filteredIndices.length} indicator data points for display`);
     
+    const supertrendAIResult = selectedIndicators.supertrendAI
+      ? calculateSuperTrendAI(data)
+      : null;
+
+    const supertrendAISeries = supertrendAIResult
+      ? filteredIndices.map((i) => {
+          const rawPoint = supertrendAIResult.series[i];
+          if (!rawPoint) {
+            return null;
+          }
+
+          return {
+            date: formatDate(data[i].date),
+            rawDate: data[i].date,
+            close: rawPoint.close,
+            supertrend: rawPoint.supertrend,
+            upperBand: rawPoint.upperBand,
+            lowerBand: rawPoint.lowerBand,
+            ama: rawPoint.ama,
+            signal: rawPoint.signal,
+            trend: rawPoint.trend,
+            distance: rawPoint.distance,
+          };
+        }).filter((value): value is {
+          date: string;
+          rawDate: string;
+          close: number;
+          supertrend: number | null;
+          upperBand: number | null;
+          lowerBand: number | null;
+          ama: number | null;
+          signal: TrendDirection;
+          trend: TrendDirection;
+          distance: number | null;
+        } => value !== null)
+      : [];
+
     return {
       rsi: filteredIndices.map(i => ({
         date: formatDate(data[i].date),
@@ -159,6 +230,10 @@ export function TechnicalAnalysisDashboard({ symbol, data, displayData }: Techni
         date: formatDate(data[i].date),
         value: adxRaw[i] || null,
       })),
+      supertrendAI: {
+        series: supertrendAISeries,
+        info: supertrendAIResult?.info ?? null,
+      },
     };
   }, [data, dataForDisplay, selectedIndicators]);
 
@@ -231,6 +306,14 @@ export function TechnicalAnalysisDashboard({ symbol, data, displayData }: Techni
               data={indicatorData.adx}
               title="ADX (14) - Average Directional Index"
               color="#3b82f6"
+            />
+          )}
+
+          {selectedIndicators.supertrendAI && indicatorData.supertrendAI.series.length > 0 && (
+            <SuperTrendAIChart
+              data={indicatorData.supertrendAI.series}
+              meta={indicatorData.supertrendAI.info}
+              symbol={symbol}
             />
           )}
 

@@ -19,6 +19,7 @@ export interface IndicatorConfig {
   ema12?: boolean;
   ema26?: boolean;
   ema50?: boolean;
+  supertrendAI?: boolean;
   
   // Momentum Indicators
   rsi?: boolean;
@@ -62,6 +63,11 @@ export function IndicatorSelector({ selectedIndicators, onChange }: IndicatorSel
     { key: 'ema12', label: 'EMA 12', description: '12-period Exponential Moving Average' },
     { key: 'ema26', label: 'EMA 26', description: '26-period Exponential Moving Average' },
     { key: 'ema50', label: 'EMA 50', description: '50-period Exponential Moving Average' },
+    {
+      key: 'supertrendAI',
+      label: 'SuperTrend AI',
+      description: 'Adaptive SuperTrend with K-means clustering for trend strength',
+    },
   ];
 
   const momentumIndicators: { key: keyof IndicatorConfig; label: string; description: string }[] = [

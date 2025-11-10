@@ -3,6 +3,8 @@ import {
   ComposedChart,
   Line,
   Bar,
+  Area,
+  Scatter,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -12,6 +14,7 @@ import {
   ReferenceLine,
   ReferenceArea,
 } from 'recharts';
+import type { SuperTrendAIInfo, TrendDirection } from '@/lib/superTrendAI';
 
 // Utility function to calculate appropriate X-axis tick interval based on data length
 // This ensures readable date labels regardless of the selected time range
@@ -420,6 +423,203 @@ export function VolumeIndicatorChart({ data, title, color = '#3b82f6' }: VolumeI
             />
           </ComposedChart>
         </ResponsiveContainer>
+      </CardContent>
+    </Card>
+  );
+}
+
+interface SuperTrendAIChartProps {
+  data: Array<{
+    date: string;
+    rawDate: string;
+    close: number;
+    supertrend: number | null;
+    upperBand: number | null;
+    lowerBand: number | null;
+    ama: number | null;
+    signal: TrendDirection;
+    trend: TrendDirection;
+    distance: number | null;
+  }>;
+  meta: SuperTrendAIInfo | null;
+  symbol: string;
+}
+
+export function SuperTrendAIChart({ data, meta, symbol }: SuperTrendAIChartProps) {
+  const chartData = data.map((point) => ({
+    ...point,
+    buySignal: point.signal === 1 ? point.supertrend ?? point.close : null,
+    sellSignal: point.signal === -1 ? point.supertrend ?? point.close : null,
+  }));
+
+  const desiredLabel = meta?.fromCluster ?? 'Best';
+  const fallbackLabel = meta && Object.keys(meta.clusterDiagnostics).length > 0
+    ? Object.keys(meta.clusterDiagnostics)[0]
+    : desiredLabel;
+  const focusLabel = meta?.clusterDiagnostics?.[desiredLabel] ? desiredLabel : fallbackLabel;
+  const focusCluster = meta?.clusterDiagnostics?.[focusLabel ?? desiredLabel];
+  const bestCluster = meta?.clusterDiagnostics?.Best;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">
+          SuperTrend AI — {symbol}
+        </CardTitle>
+        {meta && (
+          <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-2 text-xs text-muted-foreground">
+            <div>
+              <span className="font-semibold text-foreground">Target Factor:</span>{' '}
+              {meta.targetFactor.toFixed(2)}
+            </div>
+            <div>
+              <span className="font-semibold text-foreground">Performance Index:</span>{' '}
+              {meta.performanceIndex.toFixed(4)}
+            </div>
+            {bestCluster && (
+              <div>
+                <span className="font-semibold text-foreground">Best Cluster Avg Perf:</span>{' '}
+                {bestCluster.avgPerformance.toFixed(2)}
+              </div>
+            )}
+          </div>
+        )}
+      </CardHeader>
+      <CardContent>
+        <ResponsiveContainer width="100%" height={320}>
+          <ComposedChart data={chartData}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
+            <XAxis
+              dataKey="date"
+              type="category"
+              scale="point"
+              allowDuplicatedCategory={false}
+              tick={{ fill: '#9ca3af', fontSize: 10 }}
+              height={30}
+              angle={-45}
+              textAnchor="end"
+              interval={getTickInterval(chartData.length)}
+            />
+            <YAxis
+              tick={{ fill: '#9ca3af', fontSize: 10 }}
+              width={60}
+              domain={["auto", "auto"]}
+            />
+            <Tooltip
+              contentStyle={{
+                backgroundColor: '#1f2937',
+                border: '1px solid #374151',
+                borderRadius: '6px',
+              }}
+              labelFormatter={(label, payload) => payload?.[0]?.payload?.rawDate ?? label}
+              formatter={(value: number | null | undefined, name) => {
+                if (value === null || value === undefined) {
+                  return ['—', name];
+                }
+                return [value.toFixed(2), name];
+              }}
+            />
+            <Legend wrapperStyle={{ fontSize: 10 }} />
+
+            <Area
+              type="monotone"
+              dataKey="distance"
+              name="Distance"
+              stroke="#94a3b8"
+              fill="#94a3b820"
+              strokeDasharray="4 4"
+              dot={false}
+              connectNulls
+            />
+
+            <Line
+              type="monotone"
+              dataKey="close"
+              stroke="#38bdf8"
+              strokeWidth={2}
+              dot={false}
+              name={`${symbol} Close`}
+              connectNulls
+            />
+            <Line
+              type="monotone"
+              dataKey="supertrend"
+              stroke="#22c55e"
+              strokeWidth={2}
+              dot={false}
+              name="SuperTrend"
+              connectNulls
+            />
+            <Line
+              type="monotone"
+              dataKey="ama"
+              stroke="#a855f7"
+              strokeWidth={2}
+              strokeDasharray="4 2"
+              dot={false}
+              name="Adaptive MA"
+              connectNulls
+            />
+            <Line
+              type="monotone"
+              dataKey="upperBand"
+              stroke="#f97316"
+              strokeWidth={1}
+              strokeDasharray="6 2"
+              dot={false}
+              name="Upper Band"
+              connectNulls
+            />
+            <Line
+              type="monotone"
+              dataKey="lowerBand"
+              stroke="#ef4444"
+              strokeWidth={1}
+              strokeDasharray="6 2"
+              dot={false}
+              name="Lower Band"
+              connectNulls
+            />
+
+            <Scatter
+              name="Buy Signal"
+              dataKey="buySignal"
+              fill="#10b981"
+              shape="triangle"
+            />
+            <Scatter
+              name="Sell Signal"
+              dataKey="sellSignal"
+              fill="#ef4444"
+              shape="triangle"
+            />
+          </ComposedChart>
+        </ResponsiveContainer>
+
+        {meta && (
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-muted-foreground">
+            <div className="space-y-1">
+              <p className="text-foreground font-medium">Cluster Diagnostics</p>
+              <p>
+                Focus cluster: <span className="text-foreground font-semibold">{focusLabel}</span>
+              </p>
+              {focusCluster && (
+                <p>
+                  Factors in focus cluster: {focusCluster.factors.map(f => f.toFixed(2)).join(', ') || 'n/a'}
+                </p>
+              )}
+            </div>
+            <div className="space-y-1">
+              <p className="text-foreground font-medium">Signal Activity</p>
+              <p>
+                Signals generated: {meta.signalMetrics.length}
+              </p>
+              <p>
+                Cluster dispersion (best): {bestCluster ? bestCluster.dispersion.toFixed(3) : '—'}
+              </p>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
