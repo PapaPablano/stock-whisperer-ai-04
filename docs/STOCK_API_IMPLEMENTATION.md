@@ -25,12 +25,12 @@ const data = await fetchHistoricalData('AAPL', '1mo');
 ```
 
 #### 3. `fetchIntradayData(symbol: string, interval: string, range: string)`
-Fetches minute-level intraday data (requires Marketstack paid plan).
+Fetches minute-level intraday data via Polygon aggregates API (up to two years).
 
 ```typescript
-const intraday = await fetchIntradayData('AAPL', '5min', '1d');
-// Intervals: '1min', '5min', '15min', '30min', '1hour'
-// Ranges: '1d', '5d', '1w'
+const intraday = await fetchIntradayData('AAPL', '5m', '1d');
+// Intervals: '1m', '5m', '10m', '15m', '30m', '1h', '4h'
+// Ranges: '1d', '5d', '1w', '1mo', '3mo', '6mo', '1y', '2y'
 ```
 
 #### 4. `fetchStockNews(symbol: string, limit: number)`
@@ -138,11 +138,9 @@ Cache Hit? → Return cached data
     ↓
 Cache Miss? → Call Supabase Edge Function
     ↓
-Marketstack API (primary)
+Polygon.io API (intraday)
     ↓ (fallback)
-Yahoo Finance API
-    ↓ (fallback)
-Polygon.io API
+Yahoo Finance API (selected use cases)
     ↓
 Store in Cache
     ↓
@@ -151,9 +149,9 @@ Return to User
 
 ## Three-Tier API Fallback
 
-1. **Marketstack v2** (Primary) - Professional data with company names
-2. **Yahoo Finance** (Secondary) - Free, reliable fallback
-3. **Polygon.io** (Tertiary) - Enterprise-grade data
+1. **Polygon.io** (Primary intraday + aggregates)
+2. **Yahoo Finance** (Secondary quote fallback)
+3. **Internal cache** (Primary for previously fetched data)
 
 ## Performance Optimization
 
@@ -181,10 +179,10 @@ Return to User
 
 ## API Limits
 
-### Marketstack Free Tier
-- 1,000 API calls/month
-- End-of-day data only
-- No intraday access
+### Polygon Starter Tier (reference)
+- 5 API calls/minute (burst up to 120/minute)
+- Aggregates up to 2 years per request
+- Intraday minute/hour bars included
 
 ### Recommended Caching
 With proper caching, you can support:
@@ -202,7 +200,7 @@ Check that `stock_cache` table exists and has proper structure.
 Ensure user is authenticated before accessing user-specific tables.
 
 ### API errors?
-Verify `MARKETSTACK_API_KEY` is set in Supabase Edge Functions secrets.
+Verify `POLYGON_API_KEY` is set in Supabase Edge Functions secrets.
 
 ## Support
 

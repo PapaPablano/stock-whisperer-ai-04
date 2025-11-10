@@ -219,26 +219,21 @@ const Index = () => {
     source: unifiedSource,
     loading: unifiedLoading,
     error: unifiedError,
+    isFallback: unifiedFallback,
   } = unified;
 
   useEffect(() => {
-    if (candleInterval === "1d") {
+    if (candleInterval === "1d" || !unifiedFallback) {
       return;
     }
-    if (!unifiedError) {
-      return;
-    }
-    const message = unifiedError instanceof Error ? unifiedError.message : String(unifiedError);
-    if (message.toLowerCase().includes("intraday data unavailable")) {
-      setCandleInterval("1d");
-      setIntradayUnavailable(true);
-      toast({
-        title: "Intraday data unavailable",
-        description:
-          "Intraday intervals require a premium data plan. Showing daily candles instead.",
-      });
-    }
-  }, [candleInterval, toast, unifiedError]);
+    setCandleInterval("1d");
+    setIntradayUnavailable(true);
+    toast({
+      title: "Intraday data unavailable",
+      description:
+        "Intraday intervals require a premium data plan. Showing daily candles instead.",
+    });
+  }, [candleInterval, toast, unifiedFallback]);
 
   const selectedBarsForDisplay = useMemo<Bar[]>(() => {
     if (!unifiedBars || unifiedBars.length === 0) {
@@ -318,7 +313,7 @@ const Index = () => {
   const isIntradayActive = chartInterval !== "1d";
   const isIntradayPending = unifiedLoading && isIntradayActive;
   const intradayErrorMessage = useMemo(() => {
-    if (intradayUnavailable) {
+    if (intradayUnavailable || unifiedFallback) {
       return "Intraday data requires a premium data plan. Showing daily candles instead.";
     }
     if (isIntradayActive && unifiedError) {
@@ -326,7 +321,7 @@ const Index = () => {
       return raw;
     }
     return null;
-  }, [intradayUnavailable, isIntradayActive, unifiedError]);
+  }, [intradayUnavailable, isIntradayActive, unifiedError, unifiedFallback]);
 
   const plotlyChartDataOverride = useMemo(() => {
     const dates = selectedBarsForDisplay.map((bar) => bar.datetime);
@@ -347,9 +342,9 @@ const Index = () => {
       st: chartSupertrendResult,
       source: unifiedSource ?? null,
       loading: unifiedLoading,
-      error: unifiedError,
+      error: unifiedFallback ? null : unifiedError,
     };
-  }, [chartSupertrendResult, selectedBarsForDisplay, unifiedError, unifiedLoading, unifiedSource]);
+  }, [chartSupertrendResult, selectedBarsForDisplay, unifiedError, unifiedLoading, unifiedSource, unifiedFallback]);
 
   const { low52Week, high52Week } = useMemo(() => {
     if (!calculationData.length) {

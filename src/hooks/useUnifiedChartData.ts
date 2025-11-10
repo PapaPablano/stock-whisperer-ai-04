@@ -52,7 +52,7 @@ export const useUnifiedChartData = (
   const loading = isDaily ? ld : li;
   const error = isDaily ? ed : ei;
 
-  const { bars, source } = useMemo(() => {
+  const { bars, source, fallback } = useMemo(() => {
     const historicalRows = historicalDaily ?? [];
     if (isDaily) {
       const d = historicalRows.map((r: HistoricalData): Bar => ({
@@ -64,7 +64,7 @@ export const useUnifiedChartData = (
         volume: r.volume,
       }));
       const capped = d.length > maxBars ? d.slice(-maxBars) : d;
-      return { bars: capped, source: "daily-fallback" as const };
+      return { bars: capped, source: "daily-native" as const, fallback: false };
     }
 
     if (!intra || !intra.data || intra.data.length === 0) {
@@ -78,7 +78,7 @@ export const useUnifiedChartData = (
         volume: r.volume,
       }));
       const capped = d.length > maxBars ? d.slice(-maxBars) : d;
-      return { bars: capped, source: "daily-fallback" as const };
+      return { bars: capped, source: "daily-fallback" as const, fallback: true };
     }
 
     const baseInterval = intra.interval; // e.g., '1min', '5min', '15min'
@@ -121,14 +121,16 @@ export const useUnifiedChartData = (
         sessionFiltered.length > maxBars
           ? sessionFiltered.slice(-maxBars)
           : sessionFiltered;
-      return { bars: capped, source: "native" as const };
+      return { bars: capped, source: "native" as const, fallback: false };
     }
 
     // Provider returned 1min or different; aggregate client-side
     const agg = aggregateBars(sessionFiltered, interval, tz);
     const capped = agg.length > maxBars ? agg.slice(-maxBars) : agg;
-    return { bars: capped, source: "aggregated" as const };
+    return { bars: capped, source: "aggregated" as const, fallback: false };
   }, [historicalDaily, interval, intra, isDaily, session, tz, maxBars]);
+
+  const effectiveError = fallback ? null : error;
 
   // Indicators (only when bars exist)
   const enriched = useMemo(() => {
@@ -171,8 +173,9 @@ export const useUnifiedChartData = (
 
   return {
     loading,
-    error,
+    error: effectiveError,
     source,
+    isFallback: fallback,
     bars,
     dates: enriched.dates,
     ohlc: enriched.ohlc,

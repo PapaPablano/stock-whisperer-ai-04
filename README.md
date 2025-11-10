@@ -63,34 +63,31 @@ This project is built with:
 
 ## Stock Data APIs
 
-This application uses a three-tier fallback system for maximum data reliability:
+This application uses a layered fallback system for maximum data reliability:
 
-### Primary: Marketstack API v2
-- **End-of-day data**: `/eod/latest` (free tier)
-- **Historical data**: `/eod` (with date range)
-- **Intraday data**: `/intraday` (paid tier - for real-time updates)
-- **Required Environment Variable**: `MARKETSTACK_API_KEY`
+### Primary: Polygon.io API
+- Minute and hourly aggregates for intraday experience
+- Supports up to two years of historical intraday data
+- **Required Environment Variable**: `POLYGON_API_KEY`
 
 ### Secondary: Yahoo Finance API
 - Free, no API key required
-- Used as fallback when Marketstack is unavailable
-- Provides real-time quotes and historical data
+- Provides quote and historical fallbacks when Polygon throttles or fails
 
-### Tertiary: Polygon.io API
-- **Required Environment Variable**: `POLYGON_API_KEY`
-- Used as final fallback when other sources fail
-- Provides comprehensive market data
+### Tertiary: Marketstack API (optional)
+- Existing integration for specific historical use cases
+- **Environment Variable**: `MARKETSTACK_API_KEY`
 
 ## Environment Variables
 
 Add these to your Supabase project settings:
 
 ```bash
-MARKETSTACK_API_KEY=your_marketstack_api_key_here
 POLYGON_API_KEY=your_polygon_api_key_here
+MARKETSTACK_API_KEY=your_marketstack_api_key_here
 ```
 
-**Note**: The application will work with any combination of these API keys, but having all three provides the most reliable data access.
+**Note**: Polygon is required for intraday data; the others act as fallbacks when available.
 
 ## How can I deploy this project?
 
