@@ -59,14 +59,12 @@ const MAX_POLYGON_CALLS_PER_MINUTE = 5
 const RATE_LIMIT_KEY = `${CACHE_PREFIX}:polygon:budget`
 
 const FINNHUB_API_KEY = Deno.env.get('FINNHUB_API_KEY') ?? ''
-const FINNHUB_API_SECRET = Deno.env.get('FINNHUB_API_SECRET') ?? ''
 const FINNHUB_CACHE_TTL_MS = Number(Deno.env.get('FINNHUB_CACHE_TTL_MS') ?? '60000')
 const FINNHUB_REQUEST_DEDUP = (Deno.env.get('FINNHUB_REQUEST_DEDUP') ?? 'true').toLowerCase() !== 'false'
 
 const sharedFinnhubClient = FINNHUB_API_KEY
   ? new FinnhubClient({
       apiKey: FINNHUB_API_KEY,
-      apiSecret: FINNHUB_API_SECRET || undefined,
       cacheTtlMs: FINNHUB_CACHE_TTL_MS,
       requestDedup: FINNHUB_REQUEST_DEDUP,
     })
