@@ -14,6 +14,7 @@ import { calculateRSI, calculateMACD } from "@/lib/technicalIndicators";
 type Options = {
   maxBars?: number;
   session?: "EQUITY_RTH" | "FUTURES_EXT" | "CRYPTO_247";
+  historyRange?: string;
 };
 
 const normalizeInterval = (value?: string) =>
@@ -34,13 +35,14 @@ export const useUnifiedChartData = (
   const session = opts.session ?? resolveSession(symbol);
   const tz = SESSIONS[session].tz;
   const maxBars = opts.maxBars ?? 5000;
+  const historyRange = opts.historyRange ?? "5y";
 
   const isDaily = interval === "1d";
   const {
     data: historicalDaily,
     isLoading: ld,
     error: ed,
-  } = useStockHistorical(symbol, "1d");
+  } = useStockHistorical(symbol, historyRange);
   const {
     data: intra,
     isLoading: li,

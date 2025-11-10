@@ -213,6 +213,7 @@ const Index = () => {
   const chartInterval = intervalMap[candleInterval];
   const unified = useUnifiedChartData(selectedSymbol, chartInterval, {
     session: "EQUITY_RTH",
+    historyRange: calculationRange,
   });
 
   const {

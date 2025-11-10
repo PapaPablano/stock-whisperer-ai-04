@@ -159,10 +159,11 @@ export const PlotlyPriceChart: React.FC<PlotlyPriceChartProps> = ({
     },
   ];
 
-  const layout: Partial<Layout> = {
+    const layout: Partial<Layout> & { separators?: string } = {
     ...DARK_LAYOUT,
     title: { text: `${symbol.toUpperCase()} • ${interval.toUpperCase()} • ${effectiveData.source}` },
     height,
+      separators: ",.",
     grid: { rows: 2, columns: 1, pattern: "independent" },
     xaxis: {
       ...(DARK_LAYOUT.xaxis ?? {}),
