@@ -1,8 +1,61 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
+// @ts-nocheck
+import { supabaseAdmin } from '../_shared/supabaseAdminClient.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+const CACHE_PREFIX = 'quote'
+const QUOTE_TTL_MS = 60 * 1000
+
+const getCacheKey = (symbol: string) => `${CACHE_PREFIX}:${symbol.toUpperCase()}`
+
+const isFresh = (lastUpdated: string | null, ttlMs: number) => {
+  if (!lastUpdated) return false
+  const age = Date.now() - new Date(lastUpdated).getTime()
+  return age <= ttlMs
+}
+
+const getCachedQuote = async (cacheKey: string) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('stock_cache')
+      .select('data, last_updated')
+      .eq('cache_key', cacheKey)
+      .maybeSingle()
+
+    if (error || !data?.data) {
+      return null
+    }
+
+    if (!isFresh(data.last_updated, QUOTE_TTL_MS)) {
+      return null
+    }
+
+    return {
+      ...data.data,
+      cacheHit: true,
+      lastUpdated: data.last_updated,
+    }
+  } catch (error) {
+    console.error('Cache read error (quote):', error)
+    return null
+  }
+}
+
+const setCachedQuote = async (cacheKey: string, payload: Record<string, unknown>) => {
+  try {
+    await supabaseAdmin
+      .from('stock_cache')
+      .upsert({
+        cache_key: cacheKey,
+        data: payload,
+        last_updated: new Date().toISOString(),
+      }, { onConflict: 'cache_key' })
+  } catch (error) {
+    console.error('Cache write error (quote):', error)
+  }
 }
 
 Deno.serve(async (req) => {
@@ -20,7 +73,19 @@ Deno.serve(async (req) => {
       )
     }
 
-    console.log(`Fetching quote for ${symbol}`)
+    const normalizedSymbol = String(symbol).toUpperCase()
+    const cacheKey = getCacheKey(normalizedSymbol)
+
+    console.log(`Fetching quote for ${normalizedSymbol}`)
+
+    const cachedQuote = await getCachedQuote(cacheKey)
+    if (cachedQuote) {
+      console.log(`Cache hit for ${normalizedSymbol}`)
+      return new Response(
+        JSON.stringify(cachedQuote),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
 
     // Try Marketstack first (primary source)
     const marketstackApiKey = Deno.env.get('MARKETSTACK_API_KEY')
@@ -28,7 +93,7 @@ Deno.serve(async (req) => {
     if (marketstackApiKey) {
       try {
         const marketstackResponse = await fetch(
-          `http://api.marketstack.com/v2/eod/latest?access_key=${marketstackApiKey}&symbols=${symbol}`
+          `http://api.marketstack.com/v2/eod/latest?access_key=${marketstackApiKey}&symbols=${normalizedSymbol}`
         )
         
         if (marketstackResponse.ok) {
@@ -48,10 +113,13 @@ Deno.serve(async (req) => {
               low: result.low,
               open: result.open,
               previousClose: result.close, // Using close as previous close for EOD data
-              source: 'marketstack'
+              source: 'marketstack',
+              cachedAt: new Date().toISOString(),
             }
 
-            console.log(`Successfully fetched from Marketstack: ${symbol}`)
+            await setCachedQuote(cacheKey, data)
+
+            console.log(`Successfully fetched from Marketstack: ${normalizedSymbol}`)
             return new Response(
               JSON.stringify(data),
               { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -68,7 +136,7 @@ Deno.serve(async (req) => {
     // Try Yahoo Finance second (no API key needed)
     try {
       const yahooResponse = await fetch(
-        `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=1d`
+        `https://query1.finance.yahoo.com/v8/finance/chart/${normalizedSymbol}?interval=1d&range=1d`
       )
       
       if (yahooResponse.ok) {
@@ -87,10 +155,13 @@ Deno.serve(async (req) => {
           low: meta.regularMarketDayLow,
           open: meta.regularMarketOpen,
           previousClose: meta.previousClose,
-          source: 'yahoo'
+          source: 'yahoo',
+          cachedAt: new Date().toISOString(),
         }
 
-        console.log(`Successfully fetched from Yahoo Finance: ${symbol}`)
+        await setCachedQuote(cacheKey, data)
+
+        console.log(`Successfully fetched from Yahoo Finance: ${normalizedSymbol}`)
         return new Response(
           JSON.stringify(data),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -107,7 +178,7 @@ Deno.serve(async (req) => {
     }
 
     const polygonResponse = await fetch(
-      `https://api.polygon.io/v2/aggs/ticker/${symbol}/prev?adjusted=true&apiKey=${polygonApiKey}`
+      `https://api.polygon.io/v2/aggs/ticker/${normalizedSymbol}/prev?adjusted=true&apiKey=${polygonApiKey}`
     )
 
     if (!polygonResponse.ok) {
@@ -133,10 +204,13 @@ Deno.serve(async (req) => {
       low: result.l,
       open: result.o,
       previousClose: result.o,
-      source: 'polygon'
+      source: 'polygon',
+      cachedAt: new Date().toISOString(),
     }
 
-    console.log(`Successfully fetched from Polygon.io: ${symbol}`)
+    await setCachedQuote(cacheKey, data)
+
+    console.log(`Successfully fetched from Polygon.io: ${normalizedSymbol}`)
     return new Response(
       JSON.stringify(data),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

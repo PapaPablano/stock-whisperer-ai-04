@@ -1,8 +1,85 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.39.3'
+// @ts-nocheck
+import { supabaseAdmin } from '../_shared/supabaseAdminClient.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+}
+
+const CACHE_PREFIX = 'historical'
+
+const getCacheKey = (symbol: string, range: string) => `${CACHE_PREFIX}:${symbol.toUpperCase()}:${range}`
+
+const getDateRange = (range: string) => {
+  const endDate = new Date()
+  const startDate = new Date()
+
+  switch(range) {
+    case '1d':
+      startDate.setDate(endDate.getDate() - 1)
+      break
+    case '5d':
+      startDate.setDate(endDate.getDate() - 5)
+      break
+    case '1mo':
+      startDate.setMonth(endDate.getMonth() - 1)
+      break
+    case '3mo':
+      startDate.setMonth(endDate.getMonth() - 3)
+      break
+    case '6mo':
+      startDate.setMonth(endDate.getMonth() - 6)
+      break
+    case '1y':
+      startDate.setFullYear(endDate.getFullYear() - 1)
+      break
+    case '5y':
+      startDate.setFullYear(endDate.getFullYear() - 5)
+      break
+    default:
+      startDate.setMonth(endDate.getMonth() - 1)
+  }
+
+  return {
+    fromDate: startDate.toISOString().split('T')[0],
+    toDate: endDate.toISOString().split('T')[0],
+  }
+}
+
+const getCachedPayload = async (cacheKey: string) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('stock_cache')
+      .select('data, last_updated')
+      .eq('cache_key', cacheKey)
+      .maybeSingle()
+
+    if (error || !data?.data) {
+      return null
+    }
+
+    return {
+      ...data.data,
+      lastUpdated: data.last_updated,
+    }
+  } catch (error) {
+    console.error('Cache read error (historical):', error)
+    return null
+  }
+}
+
+const setCachedPayload = async (cacheKey: string, payload: Record<string, unknown>) => {
+  try {
+    await supabaseAdmin
+      .from('stock_cache')
+      .upsert({
+        cache_key: cacheKey,
+        data: payload,
+        last_updated: new Date().toISOString(),
+      }, { onConflict: 'cache_key' })
+  } catch (error) {
+    console.error('Cache write error (historical):', error)
+  }
 }
 
 Deno.serve(async (req) => {
@@ -20,47 +97,30 @@ Deno.serve(async (req) => {
       )
     }
 
-    console.log(`Fetching historical data for ${symbol} with range ${range}`)
+    const normalizedSymbol = String(symbol).toUpperCase()
+    const cacheKey = getCacheKey(normalizedSymbol, range)
+
+    console.log(`Fetching historical data for ${normalizedSymbol} with range ${range}`)
+
+    // Attempt cache read first (service role bypasses RLS for writes, reads allowed for verification)
+    const cachedPayload = await getCachedPayload(cacheKey)
+    if (cachedPayload?.data) {
+      console.log(`Cache hit for ${normalizedSymbol} (${range})`)
+      return new Response(
+        JSON.stringify({ ...cachedPayload, cacheHit: true }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      )
+    }
 
     // Try Marketstack first (primary source)
     const marketstackApiKey = Deno.env.get('MARKETSTACK_API_KEY')
     if (marketstackApiKey) {
       try {
         // Calculate date range for Marketstack
-        const endDate = new Date()
-        const startDate = new Date()
-        
-        switch(range) {
-          case '1d':
-            startDate.setDate(endDate.getDate() - 1)
-            break
-          case '5d':
-            startDate.setDate(endDate.getDate() - 5)
-            break
-          case '1mo':
-            startDate.setMonth(endDate.getMonth() - 1)
-            break
-          case '3mo':
-            startDate.setMonth(endDate.getMonth() - 3)
-            break
-          case '6mo':
-            startDate.setMonth(endDate.getMonth() - 6)
-            break
-          case '1y':
-            startDate.setFullYear(endDate.getFullYear() - 1)
-            break
-          case '5y':
-            startDate.setFullYear(endDate.getFullYear() - 5)
-            break
-          default:
-            startDate.setMonth(endDate.getMonth() - 1)
-        }
-
-        const fromDate = startDate.toISOString().split('T')[0]
-        const toDate = endDate.toISOString().split('T')[0]
+        const { fromDate, toDate } = getDateRange(range)
 
         const marketstackResponse = await fetch(
-          `http://api.marketstack.com/v2/eod?access_key=${marketstackApiKey}&symbols=${symbol}&date_from=${fromDate}&date_to=${toDate}&limit=1000`
+          `http://api.marketstack.com/v2/eod?access_key=${marketstackApiKey}&symbols=${normalizedSymbol}&date_from=${fromDate}&date_to=${toDate}&limit=1000`
         )
         
         if (marketstackResponse.ok) {
@@ -79,6 +139,13 @@ Deno.serve(async (req) => {
               .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime()) // Sort chronologically
 
             console.log(`Successfully fetched ${historicalData.length} historical records from Marketstack`)
+
+            await setCachedPayload(cacheKey, {
+              data: historicalData,
+              source: 'marketstack',
+              cachedAt: new Date().toISOString(),
+            })
+
             return new Response(
               JSON.stringify({ data: historicalData, source: 'marketstack' }),
               { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -95,7 +162,7 @@ Deno.serve(async (req) => {
     // Try Yahoo Finance second
     try {
       const yahooResponse = await fetch(
-        `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=${range}`
+        `https://query1.finance.yahoo.com/v8/finance/chart/${normalizedSymbol}?interval=1d&range=${range}`
       )
       
       if (yahooResponse.ok) {
@@ -114,6 +181,13 @@ Deno.serve(async (req) => {
         })).filter((item: any) => item.close !== null)
 
         console.log(`Successfully fetched ${historicalData.length} historical records from Yahoo Finance`)
+
+        await setCachedPayload(cacheKey, {
+          data: historicalData,
+          source: 'yahoo',
+          cachedAt: new Date().toISOString(),
+        })
+
         return new Response(
           JSON.stringify({ data: historicalData, source: 'yahoo' }),
           { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -130,40 +204,10 @@ Deno.serve(async (req) => {
     }
 
     // Calculate date range for Polygon
-    const endDate = new Date()
-    const startDate = new Date()
-    
-    switch(range) {
-      case '1d':
-        startDate.setDate(endDate.getDate() - 1)
-        break
-      case '5d':
-        startDate.setDate(endDate.getDate() - 5)
-        break
-      case '1mo':
-        startDate.setMonth(endDate.getMonth() - 1)
-        break
-      case '3mo':
-        startDate.setMonth(endDate.getMonth() - 3)
-        break
-      case '6mo':
-        startDate.setMonth(endDate.getMonth() - 6)
-        break
-      case '1y':
-        startDate.setFullYear(endDate.getFullYear() - 1)
-        break
-      case '5y':
-        startDate.setFullYear(endDate.getFullYear() - 5)
-        break
-      default:
-        startDate.setMonth(endDate.getMonth() - 1)
-    }
-
-    const fromDate = startDate.toISOString().split('T')[0]
-    const toDate = endDate.toISOString().split('T')[0]
+    const { fromDate, toDate } = getDateRange(range)
 
     const polygonResponse = await fetch(
-      `https://api.polygon.io/v2/aggs/ticker/${symbol}/range/1/day/${fromDate}/${toDate}?adjusted=true&sort=asc&apiKey=${polygonApiKey}`
+      `https://api.polygon.io/v2/aggs/ticker/${normalizedSymbol}/range/1/day/${fromDate}/${toDate}?adjusted=true&sort=asc&apiKey=${polygonApiKey}`
     )
 
     if (!polygonResponse.ok) {
@@ -186,6 +230,13 @@ Deno.serve(async (req) => {
     }))
 
     console.log(`Successfully fetched ${historicalData.length} historical records from Polygon.io`)
+
+    await setCachedPayload(cacheKey, {
+      data: historicalData,
+      source: 'polygon',
+      cachedAt: new Date().toISOString(),
+    })
+
     return new Response(
       JSON.stringify({ data: historicalData, source: 'polygon' }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
