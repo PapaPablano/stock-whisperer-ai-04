@@ -1,1 +1,13 @@
 project_id = "kmiqdnpjjajnewkuyqfi"
+
+[functions.stock-intraday]
+verify_jwt = false
+
+[functions.stock-quote]
+verify_jwt = false
+
+[functions.stock-search]
+verify_jwt = false
+
+[functions.stock-historical]
+verify_jwt = false

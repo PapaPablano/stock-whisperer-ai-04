@@ -1,4 +1,4 @@
-/// <reference lib="deno.ns" />
+// @ts-nocheck
 import { supabaseAdmin } from '../_shared/supabaseAdminClient.ts'
 
 const corsHeaders = {
