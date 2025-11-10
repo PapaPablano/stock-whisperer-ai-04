@@ -17,6 +17,7 @@ import {
   calculateSuperTrendAI,
   type SuperTrendAIInfo,
   type SuperTrendAIResult,
+  type SuperTrendAIExtras,
   type TrendDirection,
 } from '../lib/superTrendAI';
 
@@ -32,6 +33,7 @@ type SuperTrendAIChartPoint = {
   trend: TrendDirection;
   distance: number | null;
   atr: number | null;
+  targetFactor: number | null;
 };
 
 interface TechnicalAnalysisDashboardProps {
@@ -74,7 +76,7 @@ export function TechnicalAnalysisDashboard({
     mfi: Array<{ date: string; value: number | null }>;
     atr: Array<{ date: string; value: number | null }>;
     adx: Array<{ date: string; value: number | null }>;
-    supertrendAI: { series: SuperTrendAIChartPoint[]; info: SuperTrendAIInfo | null };
+    supertrendAI: { series: SuperTrendAIChartPoint[]; info: SuperTrendAIInfo | null; extras: SuperTrendAIExtras | null };
   }>(() => {
     if (!data || data.length === 0) {
       return {
@@ -90,6 +92,7 @@ export function TechnicalAnalysisDashboard({
         supertrendAI: {
           series: [],
           info: null,
+          extras: null,
         },
       };
     }
@@ -169,6 +172,7 @@ export function TechnicalAnalysisDashboard({
             trend: rawPoint.trend,
             distance: rawPoint.distance,
             atr: rawPoint.atr ?? null,
+            targetFactor: rawPoint.targetFactor ?? null,
           };
         }).filter((value): value is {
           date: string;
@@ -182,8 +186,27 @@ export function TechnicalAnalysisDashboard({
           trend: TrendDirection;
           distance: number | null;
           atr: number | null;
+          targetFactor: number | null;
         } => value !== null)
       : [];
+
+    const supertrendAIExtras: SuperTrendAIExtras | null = resolvedSupertrend
+      ? {
+          tsBull: filteredIndices.map((i) => resolvedSupertrend.extras.tsBull[i] ?? null),
+          tsBear: filteredIndices.map((i) => resolvedSupertrend.extras.tsBear[i] ?? null),
+          amaBull: filteredIndices.map((i) => resolvedSupertrend.extras.amaBull[i] ?? null),
+          amaBear: filteredIndices.map((i) => resolvedSupertrend.extras.amaBear[i] ?? null),
+          barGradient: filteredIndices.map((i) => resolvedSupertrend.extras.barGradient[i] ?? null),
+          perfIdx: filteredIndices.map((i) => resolvedSupertrend.extras.perfIdx[i] ?? 0),
+          tsSeries: filteredIndices.map((i) => resolvedSupertrend.extras.tsSeries[i] ?? null),
+          rawStop: filteredIndices.map((i) => resolvedSupertrend.extras.rawStop[i] ?? null),
+          perfAma: filteredIndices.map((i) => resolvedSupertrend.extras.perfAma[i] ?? null),
+          targetFactorSeries: filteredIndices.map((i) =>
+            resolvedSupertrend.extras.targetFactorSeries[i] ?? resolvedSupertrend.info.targetFactor
+          ),
+          regimeSeries: filteredIndices.map((i) => resolvedSupertrend.extras.regimeSeries[i] ?? 0),
+        }
+      : null;
 
     return {
       rsi: filteredIndices.map(i => ({
@@ -236,6 +259,7 @@ export function TechnicalAnalysisDashboard({
       supertrendAI: {
         series: supertrendAISeries,
         info: resolvedSupertrend?.info ?? null,
+        extras: supertrendAIExtras,
       },
     };
   }, [data, dataForDisplay, indicators, supertrendAIResult]);
@@ -316,6 +340,7 @@ export function TechnicalAnalysisDashboard({
             <SuperTrendAIChart
               data={indicatorData.supertrendAI.series}
               meta={indicatorData.supertrendAI.info}
+              extras={indicatorData.supertrendAI.extras}
               symbol={symbol}
             />
           )}

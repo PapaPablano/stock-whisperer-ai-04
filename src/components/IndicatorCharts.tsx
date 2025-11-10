@@ -13,8 +13,9 @@ import {
   ResponsiveContainer,
   ReferenceLine,
   ReferenceArea,
+  Cell,
 } from 'recharts';
-import type { SuperTrendAIInfo, TrendDirection } from '../lib/superTrendAI';
+import type { SuperTrendAIInfo, TrendDirection, SuperTrendAIExtras } from '../lib/superTrendAI';
 
 // Utility function to calculate appropriate X-axis tick interval based on data length
 // This ensures readable date labels regardless of the selected time range
@@ -441,21 +442,38 @@ interface SuperTrendAIChartProps {
     trend: TrendDirection;
     distance: number | null;
     atr: number | null;
+    targetFactor: number | null;
   }>;
   meta: SuperTrendAIInfo | null;
+  extras: SuperTrendAIExtras | null;
   symbol: string;
 }
 
-export function SuperTrendAIChart({ data, meta, symbol }: SuperTrendAIChartProps) {
-  const chartData = data.map((point) => ({
-    ...point,
-    buySignal: point.signal === 1 ? point.supertrend ?? point.close : null,
-    sellSignal: point.signal === -1 ? point.supertrend ?? point.close : null,
-    trailLong: point.trend === 1 ? point.supertrend : null,
-    trailShort: point.trend === -1 ? point.supertrend : null,
-    atrUpper: point.supertrend !== null && point.atr !== null ? point.supertrend + point.atr : null,
-    atrLower: point.supertrend !== null && point.atr !== null ? point.supertrend - point.atr : null,
-  }));
+export function SuperTrendAIChart({ data, meta, extras, symbol }: SuperTrendAIChartProps) {
+  const chartData = data.map((point, index) => {
+    const perfAma = extras?.perfAma?.[index] ?? point.ama;
+    const trailLong = extras?.tsBull?.[index] ?? (point.trend === 1 ? point.supertrend : null);
+    const trailShort = extras?.tsBear?.[index] ?? (point.trend === -1 ? point.supertrend : null);
+    const amaBull = extras?.amaBull?.[index] ?? (point.trend === 1 ? perfAma : null);
+    const amaBear = extras?.amaBear?.[index] ?? (point.trend === -1 ? perfAma : null);
+
+    return {
+      ...point,
+      buySignal: point.signal === 1 ? point.supertrend ?? point.close : null,
+      sellSignal: point.signal === -1 ? point.supertrend ?? point.close : null,
+      trailLong,
+      trailShort,
+      atrUpper: point.supertrend !== null && point.atr !== null ? point.supertrend + point.atr : null,
+      atrLower: point.supertrend !== null && point.atr !== null ? point.supertrend - point.atr : null,
+      perfAma,
+      amaBull,
+      amaBear,
+      barGradient: extras?.barGradient?.[index] ?? null,
+      perfIdx: extras?.perfIdx?.[index] ?? 0,
+      targetFactorHistory: extras?.targetFactorSeries?.[index] ?? point.targetFactor,
+      regime: extras?.regimeSeries?.[index] ?? point.trend,
+    };
+  });
 
   const desiredLabel = meta?.fromCluster ?? 'Best';
   const fallbackLabel = meta && Object.keys(meta.clusterDiagnostics).length > 0
@@ -464,6 +482,8 @@ export function SuperTrendAIChart({ data, meta, symbol }: SuperTrendAIChartProps
   const focusLabel = meta?.clusterDiagnostics?.[desiredLabel] ? desiredLabel : fallbackLabel;
   const focusCluster = meta?.clusterDiagnostics?.[focusLabel ?? desiredLabel];
   const bestCluster = meta?.clusterDiagnostics?.Best;
+  const targetPerfIndex = meta?.targetDetails?.perfIdxLatest ?? meta?.performanceIndex ?? 0;
+  const clusterPerf = meta?.clusterPerfAvg;
 
   return (
     <Card>
@@ -478,15 +498,20 @@ export function SuperTrendAIChart({ data, meta, symbol }: SuperTrendAIChartProps
               {meta.targetFactor.toFixed(2)}
             </div>
             <div>
-              <span className="font-semibold text-foreground">Performance Index:</span>{' '}
-              {meta.performanceIndex.toFixed(4)}
+              <span className="font-semibold text-foreground">Adaptive Perf Index:</span>{' '}
+              {targetPerfIndex.toFixed(4)}
             </div>
-            {bestCluster && (
+            {clusterPerf ? (
+              <div>
+                <span className="font-semibold text-foreground">Cluster Perf (B/A/W):</span>{' '}
+                {clusterPerf.best.toFixed(2)} / {clusterPerf.avg.toFixed(2)} / {clusterPerf.worst.toFixed(2)}
+              </div>
+            ) : bestCluster ? (
               <div>
                 <span className="font-semibold text-foreground">Best Cluster Avg Perf:</span>{' '}
                 {bestCluster.avgPerformance.toFixed(2)}
               </div>
-            )}
+            ) : null}
           </div>
         )}
       </CardHeader>
@@ -510,6 +535,7 @@ export function SuperTrendAIChart({ data, meta, symbol }: SuperTrendAIChartProps
               width={60}
               domain={["auto", "auto"]}
             />
+            <YAxis yAxisId="regime-axis" domain={[-1, 1]} hide />
             <Tooltip
               contentStyle={{
                 backgroundColor: '#1f2937',
@@ -525,6 +551,24 @@ export function SuperTrendAIChart({ data, meta, symbol }: SuperTrendAIChartProps
               }}
             />
             <Legend wrapperStyle={{ fontSize: 10 }} />
+
+            {extras && (
+              <Bar
+                dataKey="regime"
+                yAxisId="regime-axis"
+                barSize={6}
+                opacity={0.2}
+                isAnimationActive={false}
+                legendType="none"
+              >
+                {chartData.map((entry, index) => (
+                  <Cell
+                    key={`regime-cell-${index}`}
+                    fill={entry.barGradient ?? 'rgba(148, 163, 184, 0.25)'}
+                  />
+                ))}
+              </Bar>
+            )}
 
             <Area
               type="monotone"
@@ -564,12 +608,30 @@ export function SuperTrendAIChart({ data, meta, symbol }: SuperTrendAIChartProps
             />
             <Line
               type="monotone"
-              dataKey="ama"
+              dataKey="perfAma"
               stroke="#a855f7"
               strokeWidth={2}
               strokeDasharray="4 2"
               dot={false}
               name="Adaptive MA"
+              connectNulls
+            />
+            <Line
+              type="monotone"
+              dataKey="amaBull"
+              stroke="#22c55e"
+              strokeWidth={2}
+              dot={false}
+              name="Adaptive MA (Bull)"
+              connectNulls
+            />
+            <Line
+              type="monotone"
+              dataKey="amaBear"
+              stroke="#f43f5e"
+              strokeWidth={2}
+              dot={false}
+              name="Adaptive MA (Bear)"
               connectNulls
             />
             <Line
@@ -629,16 +691,21 @@ export function SuperTrendAIChart({ data, meta, symbol }: SuperTrendAIChartProps
         </ResponsiveContainer>
 
         {meta && (
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-xs text-muted-foreground">
+          <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-3 text-xs text-muted-foreground">
             <div className="space-y-1">
               <p className="text-foreground font-medium">Cluster Diagnostics</p>
               <p>
                 Focus cluster: <span className="text-foreground font-semibold">{focusLabel}</span>
               </p>
               {focusCluster && (
-                <p>
-                  Factors in focus cluster: {focusCluster.factors.map(f => f.toFixed(2)).join(', ') || 'n/a'}
-                </p>
+                <>
+                  <p>
+                    Factors: {focusCluster.factors.map(f => f.toFixed(2)).join(', ') || 'n/a'}
+                  </p>
+                  <p>
+                    Avg perf: {focusCluster.avgPerformance.toFixed(2)}
+                  </p>
+                </>
               )}
             </div>
             <div className="space-y-1">
@@ -647,7 +714,22 @@ export function SuperTrendAIChart({ data, meta, symbol }: SuperTrendAIChartProps
                 Signals generated: {meta.signalMetrics.length}
               </p>
               <p>
-                Cluster dispersion (best): {bestCluster ? bestCluster.dispersion.toFixed(3) : '—'}
+                Trend run μ: {meta.regimeMetrics.averageTrendRun.toFixed(1)}
+              </p>
+              <p>
+                Churn rate: {(meta.regimeMetrics.churnRate * 100).toFixed(1)}%
+              </p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-foreground font-medium">K-Means Summary</p>
+              <p>
+                Iterations: {meta.iterationsUsed} ({meta.converged ? 'converged' : 'maxed'})
+              </p>
+              <p>
+                Normalizer: {meta.normalizerDen.toFixed(4)}
+              </p>
+              <p>
+                Target factor history: {chartData[chartData.length - 1]?.targetFactorHistory?.toFixed(2) ?? 'n/a'}
               </p>
             </div>
           </div>

@@ -62,6 +62,26 @@ export interface SuperTrendAIFactorDetail {
   lower: number[];
 }
 
+export interface SuperTrendAITargetDetails {
+  from: "Best" | "Average" | "Worst";
+  factorAvg: number;
+  perfIdxLatest: number;
+}
+
+export interface SuperTrendAIExtras {
+  tsBull: (number | null)[];
+  tsBear: (number | null)[];
+  amaBull: (number | null)[];
+  amaBear: (number | null)[];
+  barGradient: (string | null)[];
+  perfIdx: number[];
+  tsSeries: (number | null)[];
+  rawStop: (number | null)[];
+  perfAma: (number | null)[];
+  targetFactorSeries: number[];
+  regimeSeries: number[];
+}
+
 export interface SuperTrendAIInfo {
   targetFactor: number;
   performanceIndex: number;
@@ -83,11 +103,18 @@ export interface SuperTrendAIInfo {
   };
   confirmBars: number;
   allFactorAnalytics?: SuperTrendAIFactorDetail[];
+  centroids: number[];
+  iterationsUsed: number;
+  converged: boolean;
+  clusterPerfAvg: { best: number; avg: number; worst: number };
+  normalizerDen: number;
+  targetDetails: SuperTrendAITargetDetails;
 }
 
 export interface SuperTrendAIResult {
   series: SuperTrendAISeriesPoint[];
   info: SuperTrendAIInfo;
+  extras: SuperTrendAIExtras;
 }
 
 const DEFAULT_OPTIONS: Required<SuperTrendAIOptions> = {
@@ -130,10 +157,63 @@ const createEmptyResult = (
     },
     confirmBars: config.confirmBars,
     allFactorAnalytics: config.returnAllFactors ? [] : undefined,
+    centroids: [],
+    iterationsUsed: 0,
+    converged: true,
+    clusterPerfAvg: { best: 0, avg: 0, worst: 0 },
+    normalizerDen: 0,
+    targetDetails: {
+      from: config.fromCluster,
+      factorAvg: config.minMultiplier,
+      perfIdxLatest: 0,
+    },
+  },
+  extras: {
+    tsBull: [],
+    tsBear: [],
+    amaBull: [],
+    amaBear: [],
+    barGradient: [],
+    perfIdx: [],
+    tsSeries: [],
+    rawStop: [],
+    perfAma: [],
+    targetFactorSeries: [],
+    regimeSeries: [],
   },
 });
 
+const DEFAULT_BULL_COLOR = "#22c55e";
+const DEFAULT_BEAR_COLOR = "#f43f5e";
+const GRADIENT_BASE_COLOR = "#999999";
+
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+const clamp01 = (value: number) => clamp(value, 0, 1);
+
+const hexToRgb = (hex: string): [number, number, number] => {
+  const normalized = hex.replace("#", "");
+  const expanded = normalized.length === 3
+    ? normalized.split("").map((c) => c + c).join("")
+    : normalized.padStart(6, "0");
+  const value = Number.parseInt(expanded, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return [r, g, b];
+};
+
+const lerpColor = (fromHex: string, toHex: string, t: number): string => {
+  const [r1, g1, b1] = hexToRgb(fromHex);
+  const [r2, g2, b2] = hexToRgb(toHex);
+  const ratio = clamp01(t);
+  const r = Math.round(r1 + ratio * (r2 - r1));
+  const g = Math.round(g1 + ratio * (g2 - g1));
+  const b = Math.round(b1 + ratio * (b2 - b1));
+  return `rgba(${r},${g},${b},1)`;
+};
+
+const crosses = (prevPrice: number, price: number, prevRef: number, ref: number) =>
+  (prevPrice <= prevRef && price > ref) || (prevPrice >= prevRef && price < ref);
 
 const ema = (values: number[], span: number, seed?: number, alphaOverride?: number): number[] => {
   if (values.length === 0) {
@@ -299,16 +379,18 @@ const kMeans1D = (
   values: number[],
   initialCentroids: number[],
   maxIter: number,
-): { centroids: number[]; labels: number[] } => {
+): { centroids: number[]; labels: number[]; iterations: number; converged: boolean } => {
   if (values.length === 0) {
-    return { centroids: initialCentroids, labels: [] };
+    return { centroids: initialCentroids, labels: [], iterations: 0, converged: true };
   }
 
-  const centroids = [...initialCentroids];
   const labels = new Array<number>(values.length).fill(0);
+  const centroids = [...initialCentroids];
+  const eps = 1e-8;
+  let iterations = 0;
+  let converged = false;
 
-  for (let iter = 0; iter < maxIter; iter++) {
-    let changed = false;
+  const assignClusters = () => {
     const clusterSums = new Array<number>(centroids.length).fill(0);
     const clusterCounts = new Array<number>(centroids.length).fill(0);
 
@@ -325,31 +407,38 @@ const kMeans1D = (
         }
       }
 
-      if (labels[i] !== bestIdx) {
-        changed = true;
-        labels[i] = bestIdx;
-      }
-
+      labels[i] = bestIdx;
       clusterSums[bestIdx] += value;
       clusterCounts[bestIdx] += 1;
     }
 
+    return { clusterSums, clusterCounts };
+  };
+
+  for (let iter = 0; iter < maxIter; iter++) {
+    iterations = iter + 1;
+    const { clusterSums, clusterCounts } = assignClusters();
+
+    let maxShift = 0;
     for (let j = 0; j < centroids.length; j++) {
-      if (clusterCounts[j] > 0) {
-        centroids[j] = clusterSums[j] / clusterCounts[j];
-      } else {
-        const randomIndex = Math.floor(Math.random() * values.length);
-        centroids[j] = values[randomIndex];
-        changed = true;
+      const old = centroids[j];
+      const next = clusterCounts[j] > 0 ? clusterSums[j] / clusterCounts[j] : old;
+      const shift = Math.abs(next - old);
+      if (shift > maxShift) {
+        maxShift = shift;
       }
+      centroids[j] = next;
     }
 
-    if (!changed) {
+    if (maxShift < eps) {
+      converged = true;
       break;
     }
   }
 
-  return { centroids, labels };
+  assignClusters();
+
+  return { centroids, labels, iterations, converged };
 };
 
 const calculateDispersion = (values: number[]): number => {
@@ -492,6 +581,9 @@ export const calculateSuperTrendAI = (
   let targetFactor = config.minMultiplier;
   let selectedClusterId: number | null = null;
   let selectedClusterLabel: "Best" | "Average" | "Worst" | null = null;
+  let kMeansCentroids: number[] = [];
+  let kMeansIterations = 0;
+  let kMeansConverged = true;
 
   if (performances.length < 3) {
     const bestIdx = performances.reduce((best, value, idx, array) => (
@@ -504,12 +596,17 @@ export const calculateSuperTrendAI = (
     clusterMapping = { 0: "Average" };
     selectedClusterId = 0;
     selectedClusterLabel = "Average";
+    const fallbackValue = performances[bestIdx] ?? 0;
+    kMeansCentroids = [fallbackValue, fallbackValue, fallbackValue];
   } else {
     const q25 = percentile(performances, 0.25);
     const q50 = percentile(performances, 0.5);
     const q75 = percentile(performances, 0.75);
 
-    const { labels } = kMeans1D(performances, [q25, q50, q75], config.maxIter);
+    const { labels, centroids, iterations, converged } = kMeans1D(performances, [q25, q50, q75], config.maxIter);
+    kMeansCentroids = centroids;
+    kMeansIterations = iterations;
+    kMeansConverged = converged;
 
     clusters = { 0: [], 1: [], 2: [] };
     perfClusters = { 0: [], 1: [], 2: [] };
@@ -582,11 +679,6 @@ export const calculateSuperTrendAI = (
   const { supertrend: chosenSupertrend, trend: chosenTrend, finalUpper: chosenUpper, finalLower: chosenLower } =
     calculateSupertrendForFactor(dataSlice, atr, targetFactor);
 
-  const priceDiffs = dataSlice.map((point, index) => (
-    index === 0 ? 0 : Math.abs(point.close - dataSlice[index - 1].close)
-  ));
-  const diffEma = ema(priceDiffs, 10, priceDiffs[0]);
-
   if (selectedClusterId === null) {
     const fallbackEntry = Object.entries(clusterMapping)[0];
     if (fallbackEntry) {
@@ -595,16 +687,19 @@ export const calculateSuperTrendAI = (
     }
   }
 
-  const clusterPerformanceValues = selectedClusterId !== null ? perfClusters[selectedClusterId] ?? [] : [];
-  const clusterPerformanceMean = clusterPerformanceValues.length > 0
-    ? clusterPerformanceValues.reduce((sum, value) => sum + value, 0) / clusterPerformanceValues.length
-    : 0;
+  const perfAlphaWeight = config.perfAlpha > 0 ? 2 / (config.perfAlpha + 1) : 1;
+  let perfNumerator = 0;
+  let perfDenominator = 0;
+  const perfIdxSeries: number[] = [];
 
-  const rawPerformanceIndex = diffEma.length > 0
-    ? Math.max(clusterPerformanceMean, 0) / (Math.abs(diffEma[diffEma.length - 1]) + 1e-10)
-    : 0;
-  const performanceIndex = Math.tanh(rawPerformanceIndex);
-  const alpha = clamp(performanceIndex, 0, 1);
+  const tsSeries: (number | null)[] = [];
+  const rawStops: (number | null)[] = [];
+  const perfAmaSeries: (number | null)[] = [];
+  const tsBullSeries: (number | null)[] = [];
+  const tsBearSeries: (number | null)[] = [];
+  const amaBullSeries: (number | null)[] = [];
+  const amaBearSeries: (number | null)[] = [];
+  const regimeSeries: number[] = [];
 
   const series: SuperTrendAISeriesPoint[] = [];
   let pendingSignal: TrendDirection = 0;
@@ -621,6 +716,23 @@ export const calculateSuperTrendAI = (
     const trendValue = chosenTrend[index] ?? 0;
     const upperValue = Number.isFinite(chosenUpper[index]) ? chosenUpper[index] : null;
     const lowerValue = Number.isFinite(chosenLower[index]) ? chosenLower[index] : null;
+
+    let perfIdxValue = 0;
+    if (index === 0) {
+      perfIdxSeries.push(0);
+    } else {
+      const prevClose = dataSlice[index - 1].close;
+      const prevOutput = Number.isFinite(chosenSupertrend[index - 1])
+        ? chosenSupertrend[index - 1]
+        : prevClose;
+      const delta = point.close - prevClose;
+      const signedDelta = delta * Math.sign(prevClose - prevOutput);
+      const absDelta = Math.abs(delta);
+      perfNumerator = perfAlphaWeight * signedDelta + (1 - perfAlphaWeight) * perfNumerator;
+      perfDenominator = perfAlphaWeight * absDelta + (1 - perfAlphaWeight) * perfDenominator;
+      perfIdxValue = perfDenominator !== 0 ? perfNumerator / perfDenominator : 0;
+      perfIdxSeries.push(perfIdxValue);
+    }
 
     const signal = pendingSignal;
     pendingSignal = 0;
@@ -682,10 +794,32 @@ export const calculateSuperTrendAI = (
       : series[index - 1].ama ?? series[index - 1].supertrend ?? series[index - 1].close;
     const safePreviousAma = Number.isFinite(previousAmaCandidate) ? previousAmaCandidate : point.close;
     const targetValue = supertrendValue !== null ? supertrendValue : safePreviousAma;
-    const amaRaw = safePreviousAma + alpha * (targetValue - safePreviousAma);
+    const amaSmoothing = clamp01(Math.abs(perfIdxValue));
+    const amaRaw = safePreviousAma + amaSmoothing * (targetValue - safePreviousAma);
     const ama = Number.isFinite(amaRaw) ? amaRaw : safePreviousAma;
     const distance = supertrendValue !== null ? point.close - supertrendValue : null;
     const atrValue = Number.isFinite(atr[index]) ? atr[index] : null;
+
+    const regimeChanged = index > 0 ? (chosenTrend[index - 1] ?? 0) !== trendValue : false;
+    const prevClose = index > 0 ? dataSlice[index - 1].close : point.close;
+    const prevAma = index > 0
+      ? series[index - 1].ama ?? series[index - 1].supertrend ?? series[index - 1].close
+      : ama;
+    const crossed = index > 0 && prevAma !== null
+      ? crosses(prevClose, point.close, prevAma, ama)
+      : false;
+
+    const stopForPlot = !regimeChanged ? supertrendValue : null;
+    const amaPlot = crossed ? null : ama;
+
+    tsSeries.push(stopForPlot);
+    rawStops.push(supertrendValue);
+    perfAmaSeries.push(amaPlot);
+    regimeSeries.push(trendValue);
+    tsBullSeries.push(trendValue === 1 ? stopForPlot : null);
+    tsBearSeries.push(trendValue === -1 ? stopForPlot : null);
+    amaBullSeries.push(trendValue === 1 ? amaPlot : null);
+    amaBearSeries.push(trendValue === -1 ? amaPlot : null);
 
     series.push({
       date: point.date,
@@ -712,11 +846,48 @@ export const calculateSuperTrendAI = (
     : 0;
   const churnRate = series.length > 0 ? trendChangeCount / series.length : 0;
 
+  const safeDenominator = Math.abs(perfDenominator) > 1e-12 ? perfDenominator : 1e-12;
+  const rawPerformanceIndex = perfNumerator / safeDenominator;
+  const performanceIndex = Math.tanh(rawPerformanceIndex);
+  const normalizerDen = perfDenominator;
+
+  const barGradient = perfIdxSeries.map((value, index) => {
+    const trendValue = regimeSeries[index] ?? 0;
+    if (trendValue === 0) {
+      return null;
+    }
+    const color = trendValue === 1
+      ? lerpColor(GRADIENT_BASE_COLOR, DEFAULT_BULL_COLOR, Math.abs(value))
+      : lerpColor(GRADIENT_BASE_COLOR, DEFAULT_BEAR_COLOR, Math.abs(value));
+    return color;
+  });
+
   const clusterDiagnostics = buildDiagnostics(clusters, perfClusters, clusterMapping);
   const clusterDispersions: Record<number, number> = {};
   Object.entries(clusters).forEach(([id, values]) => {
     clusterDispersions[Number(id)] = calculateDispersion(values);
   });
+
+  const clusterPerfAvg = { best: 0, avg: 0, worst: 0 };
+  Object.entries(clusterMapping).forEach(([id, label]) => {
+    const perfValues = perfClusters[Number(id)] ?? [];
+    const mean = perfValues.length > 0
+      ? perfValues.reduce((sum, value) => sum + value, 0) / perfValues.length
+      : 0;
+    if (label === "Best") {
+      clusterPerfAvg.best = mean;
+    } else if (label === "Average") {
+      clusterPerfAvg.avg = mean;
+    } else if (label === "Worst") {
+      clusterPerfAvg.worst = mean;
+    }
+  });
+
+  const targetDetails: SuperTrendAITargetDetails = {
+    from: selectedClusterLabel ?? config.fromCluster,
+    factorAvg: targetFactor,
+    perfIdxLatest: performanceIndex,
+  };
 
   const allFactorAnalytics = config.returnAllFactors
     ? factors.map((factor, index) => ({
@@ -748,12 +919,33 @@ export const calculateSuperTrendAI = (
     },
     confirmBars: config.confirmBars,
     allFactorAnalytics,
+    centroids: kMeansCentroids,
+    iterationsUsed: kMeansIterations,
+    converged: kMeansConverged,
+    clusterPerfAvg,
+    normalizerDen,
+    targetDetails,
   };
 
   info.signalMetrics = calculateSignalMetrics(dataSlice, series, info, atr);
 
+  const extras: SuperTrendAIExtras = {
+    tsBull: tsBullSeries,
+    tsBear: tsBearSeries,
+    amaBull: amaBullSeries,
+    amaBear: amaBearSeries,
+    barGradient,
+    perfIdx: perfIdxSeries,
+    tsSeries,
+    rawStop: rawStops,
+    perfAma: perfAmaSeries,
+    targetFactorSeries: series.map((point) => point.targetFactorHistory ?? targetFactor),
+    regimeSeries,
+  };
+
   return {
     series,
     info,
+    extras,
   };
 };
