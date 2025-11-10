@@ -567,60 +567,122 @@ export const calculateSuperTrendAI = (
     }
   }
 
-  const closestFactorIndex = factors.reduce((bestIdx, value, idx) => (
-    Math.abs(value - targetFactor) < Math.abs(factors[bestIdx] - targetFactor) ? idx : bestIdx
-  ), 0);
+  if (!Number.isFinite(targetFactor)) {
+    targetFactor = config.minMultiplier;
+  }
 
-  targetFactor = factors[closestFactorIndex];
-  const chosenSupertrend = supertrendsByFactor[closestFactorIndex];
-  const chosenTrend = trendsByFactor[closestFactorIndex];
-  const chosenUpper = upperBandsByFactor[closestFactorIndex];
-  const chosenLower = lowerBandsByFactor[closestFactorIndex];
+  if (config.snapToGrid) {
+    const snappedIdx = factors.reduce((bestIdx, value, idx) => (
+      Math.abs(value - targetFactor) < Math.abs(factors[bestIdx] - targetFactor) ? idx : bestIdx
+    ), 0);
+    targetFactor = factors[snappedIdx];
+  }
 
-  const priceDiffs = data.map((point, index) => {
-    if (index === 0) {
-      return 0;
-    }
-    return Math.abs(point.close - data[index - 1].close);
-  });
+  const { supertrend: chosenSupertrend, trend: chosenTrend, finalUpper: chosenUpper, finalLower: chosenLower } =
+    calculateSupertrendForFactor(dataSlice, atr, targetFactor);
 
+  const priceDiffs = dataSlice.map((point, index) => (
+    index === 0 ? 0 : Math.abs(point.close - dataSlice[index - 1].close)
+  ));
   const diffEma = ema(priceDiffs, 10, priceDiffs[0]);
 
-  const targetClusterId = Object.entries(clusterMapping).find(([, label]) => label === config.fromCluster)?.[0];
-  const clusterPerformanceValues = targetClusterId !== undefined ? perfClusters[Number(targetClusterId)] : [];
+  if (selectedClusterId === null) {
+    const fallbackEntry = Object.entries(clusterMapping)[0];
+    if (fallbackEntry) {
+      selectedClusterId = Number(fallbackEntry[0]);
+      selectedClusterLabel = fallbackEntry[1];
+    }
+  }
+
+  const clusterPerformanceValues = selectedClusterId !== null ? perfClusters[selectedClusterId] ?? [] : [];
   const clusterPerformanceMean = clusterPerformanceValues.length > 0
     ? clusterPerformanceValues.reduce((sum, value) => sum + value, 0) / clusterPerformanceValues.length
     : 0;
 
-  const performanceIndex = diffEma.length > 0
-    ? Math.max(clusterPerformanceMean, 0) / (diffEma[diffEma.length - 1] + 1e-10)
+  const rawPerformanceIndex = diffEma.length > 0
+    ? Math.max(clusterPerformanceMean, 0) / (Math.abs(diffEma[diffEma.length - 1]) + 1e-10)
     : 0;
+  const performanceIndex = Math.tanh(rawPerformanceIndex);
+  const alpha = clamp(performanceIndex, 0, 1);
 
   const series: SuperTrendAISeriesPoint[] = [];
+  let pendingSignal: TrendDirection = 0;
+  let confirmCountdown: { direction: TrendDirection; remaining: number } | null = null;
+  let currentRunTrend: TrendDirection = 0;
+  let currentRunLength = 0;
+  const trendRuns: number[] = [];
+  let trendChangeCount = 0;
 
-  for (let index = 0; index < data.length; index++) {
-    const point = data[index];
-    const supertrendValue = chosenSupertrend[index] ?? null;
+  for (let index = 0; index < dataSlice.length; index++) {
+    const point = dataSlice[index];
+    const supertrendRaw = chosenSupertrend[index];
+    const supertrendValue = Number.isFinite(supertrendRaw) ? supertrendRaw : null;
     const trendValue = chosenTrend[index] ?? 0;
-    const upperValue = chosenUpper[index] ?? null;
-    const lowerValue = chosenLower[index] ?? null;
-    const previousTrend = index > 0 ? chosenTrend[index - 1] : 0;
+    const upperValue = Number.isFinite(chosenUpper[index]) ? chosenUpper[index] : null;
+    const lowerValue = Number.isFinite(chosenLower[index]) ? chosenLower[index] : null;
 
-    let signal: TrendDirection = 0;
-    if (index > 0) {
-      if (previousTrend === -1 && trendValue === 1) {
-        signal = 1;
-      } else if (previousTrend === 1 && trendValue === -1) {
-        signal = -1;
+    const signal = pendingSignal;
+    pendingSignal = 0;
+
+    if (confirmCountdown) {
+      if (trendValue === confirmCountdown.direction) {
+        confirmCountdown.remaining -= 1;
+        if (confirmCountdown.remaining <= 0) {
+          pendingSignal = confirmCountdown.direction;
+          confirmCountdown = null;
+        }
+      } else {
+        confirmCountdown = null;
       }
     }
 
-    const previousAma = index === 0
+    const previousTrend = index > 0 ? chosenTrend[index - 1] ?? 0 : 0;
+    if (previousTrend !== trendValue) {
+      if (previousTrend !== 0 && trendValue !== 0) {
+        trendChangeCount += 1;
+      }
+
+      let nextSignal: TrendDirection = 0;
+      if (trendValue === 1) {
+        nextSignal = 1;
+      } else if (trendValue === -1) {
+        nextSignal = -1;
+      } else {
+        confirmCountdown = null;
+      }
+
+      if (nextSignal !== 0) {
+        if (config.confirmBars > 0) {
+          confirmCountdown = { direction: nextSignal, remaining: config.confirmBars };
+        } else {
+          pendingSignal = nextSignal;
+        }
+      }
+    }
+
+    if (trendValue !== 0) {
+      if (trendValue === currentRunTrend) {
+        currentRunLength += 1;
+      } else {
+        if (currentRunLength > 0) {
+          trendRuns.push(currentRunLength);
+        }
+        currentRunTrend = trendValue;
+        currentRunLength = 1;
+      }
+    } else if (currentRunLength > 0) {
+      trendRuns.push(currentRunLength);
+      currentRunTrend = 0;
+      currentRunLength = 0;
+    }
+
+    const previousAmaCandidate = index === 0
       ? supertrendValue ?? point.close
       : series[index - 1].ama ?? series[index - 1].supertrend ?? series[index - 1].close;
-
-    const targetValue = supertrendValue ?? previousAma ?? point.close;
-    const ama = previousAma + performanceIndex * (targetValue - previousAma);
+    const safePreviousAma = Number.isFinite(previousAmaCandidate) ? previousAmaCandidate : point.close;
+    const targetValue = supertrendValue !== null ? supertrendValue : safePreviousAma;
+    const amaRaw = safePreviousAma + alpha * (targetValue - safePreviousAma);
+    const ama = Number.isFinite(amaRaw) ? amaRaw : safePreviousAma;
     const distance = supertrendValue !== null ? point.close - supertrendValue : null;
 
     series.push({
@@ -631,17 +693,36 @@ export const calculateSuperTrendAI = (
       upperBand: upperValue,
       lowerBand: lowerValue,
       signal,
-      ama: Number.isFinite(ama) ? ama : previousAma,
+      ama,
       distance,
       targetFactor,
+      targetFactorHistory: targetFactor,
     });
   }
+
+  if (currentRunLength > 0) {
+    trendRuns.push(currentRunLength);
+  }
+
+  const averageTrendRun = trendRuns.length > 0
+    ? trendRuns.reduce((sum, value) => sum + value, 0) / trendRuns.length
+    : 0;
+  const churnRate = series.length > 0 ? trendChangeCount / series.length : 0;
 
   const clusterDiagnostics = buildDiagnostics(clusters, perfClusters, clusterMapping);
   const clusterDispersions: Record<number, number> = {};
   Object.entries(clusters).forEach(([id, values]) => {
     clusterDispersions[Number(id)] = calculateDispersion(values);
   });
+
+  const allFactorAnalytics = config.returnAllFactors
+    ? factors.map((factor, index) => ({
+        factor,
+        performance: performances[index],
+        upper: upperBandsByFactor[index],
+        lower: lowerBandsByFactor[index],
+      }))
+    : undefined;
 
   const info: SuperTrendAIInfo = {
     targetFactor,
