@@ -123,6 +123,213 @@ export const PlotlyPriceChart: React.FC<PlotlyPriceChartProps> = ({
     reportedRef.current = key;
   }, [effectiveData, onDataReady]);
 
+  const traces = useMemo<Data[]>(() => {
+    const base: Data[] = [
+      {
+        type: "candlestick",
+        x: effectiveData.dates,
+        open: effectiveData.ohlc.open,
+        high: effectiveData.ohlc.high,
+        low: effectiveData.ohlc.low,
+        close: effectiveData.ohlc.close,
+        name: "Price",
+        increasing: { line: { color: COLORS.candleUp } },
+        decreasing: { line: { color: COLORS.candleDown } },
+        xaxis: "x",
+        yaxis: "y",
+      },
+      {
+        type: "bar",
+        x: effectiveData.dates,
+        y: effectiveData.volume.values,
+        name: "Volume",
+        marker: {
+          color: effectiveData.volume.colors.map((c) =>
+            c === "up" ? COLORS.volumeUp : COLORS.volumeDown
+          ),
+        },
+        xaxis: "x",
+        yaxis: "y2",
+        showlegend: false,
+      },
+    ];
+
+    if (!effectiveData.st || !effectiveData.dates.length) {
+      return base;
+    }
+
+    const xValues = effectiveData.dates;
+    const extras = effectiveData.st.extras;
+    const fallbackSeries = effectiveData.st.series;
+    const hasFinite = (values: Array<number | null | undefined>) =>
+      values.some((value) => typeof value === "number" && Number.isFinite(value));
+
+    const tsBullValues = extras?.tsBull?.length
+      ? extras.tsBull
+      : fallbackSeries.map((point) =>
+          point.trend === 1 ? point.supertrend ?? null : null
+        );
+    const tsBearValues = extras?.tsBear?.length
+      ? extras.tsBear
+      : fallbackSeries.map((point) =>
+          point.trend === -1 ? point.supertrend ?? null : null
+        );
+    const amaBullValues = extras?.amaBull?.length
+      ? extras.amaBull
+      : fallbackSeries.map((point) =>
+          point.trend === 1 ? point.ama ?? point.supertrend ?? null : null
+        );
+    const amaBearValues = extras?.amaBear?.length
+      ? extras.amaBear
+      : fallbackSeries.map((point) =>
+          point.trend === -1 ? point.ama ?? point.supertrend ?? null : null
+        );
+    const perfAmaValues = extras?.perfAma?.length
+      ? extras.perfAma
+      : fallbackSeries.map((point) => point.ama ?? point.supertrend ?? null);
+    const tsSeriesValues = extras?.tsSeries?.length
+      ? extras.tsSeries
+      : fallbackSeries.map((point) => point.supertrend);
+
+    const overlayTraces: Data[] = [];
+
+    if (hasFinite(tsSeriesValues)) {
+      overlayTraces.push({
+        type: "scattergl",
+        mode: "lines",
+        x: xValues,
+        y: tsSeriesValues,
+        name: "SuperTrend AI",
+        line: { color: COLORS.supertrend, width: 2 },
+        xaxis: "x",
+        yaxis: "y",
+        hovertemplate: "%{y:.2f}<extra>SuperTrend AI</extra>",
+      } as Data);
+    }
+
+    if (hasFinite(tsBullValues)) {
+      overlayTraces.push({
+        type: "scattergl",
+        mode: "lines",
+        x: xValues,
+        y: tsBullValues,
+        name: "Trailing Stop (Bull)",
+        line: { color: COLORS.supertrendBull, width: 2 },
+        xaxis: "x",
+        yaxis: "y",
+        hovertemplate: "%{y:.2f}<extra>TS Bull</extra>",
+      } as Data);
+    }
+
+    if (hasFinite(tsBearValues)) {
+      overlayTraces.push({
+        type: "scattergl",
+        mode: "lines",
+        x: xValues,
+        y: tsBearValues,
+        name: "Trailing Stop (Bear)",
+        line: { color: COLORS.supertrendBear, width: 2 },
+        xaxis: "x",
+        yaxis: "y",
+        hovertemplate: "%{y:.2f}<extra>TS Bear</extra>",
+      } as Data);
+    }
+
+    if (hasFinite(perfAmaValues)) {
+      overlayTraces.push({
+        type: "scattergl",
+        mode: "lines",
+        x: xValues,
+        y: perfAmaValues,
+        name: "Adaptive MA",
+        line: { color: COLORS.supertrend, width: 2, dash: "dot" },
+        xaxis: "x",
+        yaxis: "y",
+        hovertemplate: "%{y:.2f}<extra>Adaptive MA</extra>",
+      } as Data);
+    }
+
+    if (hasFinite(amaBullValues)) {
+      overlayTraces.push({
+        type: "scattergl",
+        mode: "lines",
+        x: xValues,
+        y: amaBullValues,
+        name: "AMA Bull",
+        line: { color: COLORS.supertrendAmaBull, width: 2, dash: "dot" },
+        xaxis: "x",
+        yaxis: "y",
+        hovertemplate: "%{y:.2f}<extra>AMA Bull</extra>",
+      } as Data);
+    }
+
+    if (hasFinite(amaBearValues)) {
+      overlayTraces.push({
+        type: "scattergl",
+        mode: "lines",
+        x: xValues,
+        y: amaBearValues,
+        name: "AMA Bear",
+        line: { color: COLORS.supertrendAmaBear, width: 2, dash: "dot" },
+        xaxis: "x",
+        yaxis: "y",
+        hovertemplate: "%{y:.2f}<extra>AMA Bear</extra>",
+      } as Data);
+    }
+
+    const buySignals: { x: string; y: number }[] = [];
+    const sellSignals: { x: string; y: number }[] = [];
+    fallbackSeries.forEach((point, index) => {
+      if (!point.signal) {
+        return;
+      }
+      const value = point.supertrend ?? point.close;
+      if (typeof value !== "number" || !Number.isFinite(value)) {
+        return;
+      }
+      const bucket = point.signal === 1 ? buySignals : sellSignals;
+      bucket.push({ x: xValues[index], y: value });
+    });
+
+    if (buySignals.length > 0) {
+      overlayTraces.push({
+        type: "scattergl",
+        mode: "markers",
+        x: buySignals.map((item) => item.x),
+        y: buySignals.map((item) => item.y),
+        marker: {
+          color: COLORS.supertrendBull,
+          symbol: "triangle-up",
+          size: 10,
+        },
+        name: "Signal Up",
+        xaxis: "x",
+        yaxis: "y",
+        hovertemplate: "Buy @ %{y:.2f}<extra>Signal Up</extra>",
+      } as Data);
+    }
+
+    if (sellSignals.length > 0) {
+      overlayTraces.push({
+        type: "scattergl",
+        mode: "markers",
+        x: sellSignals.map((item) => item.x),
+        y: sellSignals.map((item) => item.y),
+        marker: {
+          color: COLORS.supertrendBear,
+          symbol: "triangle-down",
+          size: 10,
+        },
+        name: "Signal Down",
+        xaxis: "x",
+        yaxis: "y",
+        hovertemplate: "Sell @ %{y:.2f}<extra>Signal Down</extra>",
+      } as Data);
+    }
+
+    return [...base, ...overlayTraces];
+  }, [effectiveData.dates, effectiveData.ohlc.close, effectiveData.ohlc.high, effectiveData.ohlc.low, effectiveData.ohlc.open, effectiveData.volume.colors, effectiveData.volume.values, effectiveData.st]);
+
   if (effectiveData.error)
     return (
       <div className="rounded bg-red-900/30 p-3 text-red-200">Failed to load chart.</div>
@@ -131,46 +338,6 @@ export const PlotlyPriceChart: React.FC<PlotlyPriceChartProps> = ({
     return (
       <div className="rounded bg-gray-800 p-6 text-gray-300">Loading chart...</div>
     );
-
-  const traces: Data[] = [
-    {
-      type: "candlestick",
-      x: effectiveData.dates,
-      open: effectiveData.ohlc.open,
-      high: effectiveData.ohlc.high,
-      low: effectiveData.ohlc.low,
-      close: effectiveData.ohlc.close,
-      name: "Price",
-      increasing: { line: { color: COLORS.candleUp } },
-      decreasing: { line: { color: COLORS.candleDown } },
-      xaxis: "x",
-      yaxis: "y",
-    },
-    {
-      type: "scatter",
-      mode: "lines",
-      x: effectiveData.dates,
-      y: effectiveData.st?.series.map((s) => s.supertrend) ?? [],
-      name: "SuperTrend AI",
-      line: { color: COLORS.supertrend, width: 2 },
-      xaxis: "x",
-      yaxis: "y",
-    },
-    {
-      type: "bar",
-      x: effectiveData.dates,
-      y: effectiveData.volume.values,
-      name: "Volume",
-      marker: {
-        color: effectiveData.volume.colors.map((c) =>
-          c === "up" ? COLORS.volumeUp : COLORS.volumeDown
-        ),
-      },
-      xaxis: "x",
-      yaxis: "y2",
-      showlegend: false,
-    },
-  ];
 
     const layout: (Partial<Layout> & {
       separators?: string;
