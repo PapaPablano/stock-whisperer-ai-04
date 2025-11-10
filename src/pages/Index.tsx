@@ -3,13 +3,21 @@ import { StockCard } from "@/components/StockCard";
 import { MetricCard } from "@/components/MetricCard";
 import { TechnicalAnalysisDashboard } from "@/components/TechnicalAnalysisDashboard";
 import { PriceChart } from "@/components/PriceChart";
+import { TradingViewChart } from "@/components/TradingViewChart";
 import { featuredStocks } from "@/lib/mockData";
 import { TrendingUp, DollarSign, BarChart3, Activity } from "lucide-react";
 import { useStockQuote } from "@/hooks/useStockQuote";
 import { useStockHistorical } from "@/hooks/useStockHistorical";
-import { useState, useMemo } from "react";
+import { useStockIntraday, type IntradayData } from "@/hooks/useStockIntraday";
+import { useState, useMemo, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
+import { DEFAULT_INDICATOR_CONFIG, type IndicatorConfig } from "@/components/IndicatorSelector";
 import type { PriceData } from "@/lib/technicalIndicators";
+import {
+  calculateSuperTrendAI,
+  type SuperTrendAIResult,
+  type SuperTrendAISeriesPoint,
+} from "@/lib/superTrendAI";
 
 const formatCurrency = (value?: number | null) => {
   if (value === null || value === undefined || Number.isNaN(value)) return "—";
@@ -50,10 +58,91 @@ const formatCompactNumber = (value?: number | null) => {
   }).format(value);
 };
 
+type CandleInterval = "10m" | "1h" | "4h" | "1d";
+
+interface IntradaySettings {
+  enabled: boolean;
+  apiInterval: "1min" | "5min" | "15min" | "30min" | "1hour";
+  range: "1d" | "5d" | "1w";
+  aggregate: number;
+}
+
+const resolveIntradayRange = (range: string): "1d" | "5d" | "1w" => {
+  switch (range) {
+    case "1d":
+      return "1d";
+    case "5d":
+      return "5d";
+    default:
+      return "1w";
+  }
+};
+
+const ensureFinite = (value: number | null | undefined, fallback: number): number => {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return fallback;
+  }
+  return value;
+};
+
+const bucketIntradayData = (data: IntradayData[], groupSize: number): PriceData[] => {
+  if (!data || data.length === 0 || groupSize <= 0) {
+    return [];
+  }
+
+  const buckets: PriceData[] = [];
+
+  for (let index = 0; index < data.length; index += groupSize) {
+    const slice = data.slice(index, index + groupSize);
+    if (!slice.length) {
+      continue;
+    }
+
+    const first = slice[0];
+    const last = slice[slice.length - 1];
+    const fallbackOpen = ensureFinite(first.close, 0);
+    const fallbackClose = ensureFinite(last.open, fallbackOpen);
+
+    const open = ensureFinite(first.open, fallbackOpen);
+    const close = ensureFinite(last.close, fallbackClose);
+    const highs = slice.map((point) => ensureFinite(point.high, Math.max(open, close)));
+    const lows = slice.map((point) => ensureFinite(point.low, Math.min(open, close)));
+    const high = Math.max(...highs, open, close);
+    const low = Math.min(...lows, open, close);
+    const volume = slice.reduce((sum, point) => sum + (point.volume ?? 0), 0);
+    const isoDate = new Date(last.datetime).toISOString();
+
+    buckets.push({
+      date: isoDate,
+      open,
+      high,
+      low,
+      close,
+      volume,
+    });
+  }
+
+  return buckets;
+};
+
 const Index = () => {
   const [selectedSymbol, setSelectedSymbol] = useState("AAPL");
   const [dateRange, setDateRange] = useState("1mo"); // Default to 1 month
+  const [selectedIndicators, setSelectedIndicators] = useState<IndicatorConfig>(() => ({
+    ...DEFAULT_INDICATOR_CONFIG,
+  }));
+  const [candleInterval, setCandleInterval] = useState<CandleInterval>("1d");
   const { data: liveQuote, isLoading: quoteLoading } = useStockQuote(selectedSymbol);
+
+  useEffect(() => {
+    if (candleInterval === "1d") {
+      return;
+    }
+
+    if (dateRange !== "1d" && dateRange !== "5d") {
+      setDateRange("5d");
+    }
+  }, [candleInterval, dateRange]);
   
   // Calculate the range needed for indicator calculations (always fetch enough data)
   const calculationRange = useMemo(() => {
@@ -104,7 +193,7 @@ const Index = () => {
     if (!calculationData || calculationData.length === 0) return [];
     
     const today = new Date();
-  const cutoffDate = new Date();
+    const cutoffDate = new Date();
     
     switch(dateRange) {
       case '1d':
@@ -145,14 +234,137 @@ const Index = () => {
     return filtered;
   }, [calculationData, dateRange]);
 
-  // Format data for PriceChart component (simplified format) - use displayData for chart
-  const simplePriceData = useMemo(() => {
-    return displayData.map(item => ({
-      date: new Date(item.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      price: item.close,
-      volume: item.volume,
-    }));
-  }, [displayData]);
+  const dashboardSupertrendResult = useMemo<SuperTrendAIResult | null>(() => {
+    if (!selectedIndicators.supertrendAI || calculationData.length === 0) {
+      return null;
+    }
+    return calculateSuperTrendAI(calculationData);
+  }, [selectedIndicators.supertrendAI, calculationData]);
+
+  const intradaySettings = useMemo<IntradaySettings>(() => {
+    switch (candleInterval) {
+      case "10m":
+        return {
+          enabled: true,
+          apiInterval: "5min",
+          range: resolveIntradayRange(dateRange),
+          aggregate: 2,
+        };
+      case "1h":
+        return {
+          enabled: true,
+          apiInterval: "1hour",
+          range: resolveIntradayRange(dateRange),
+          aggregate: 1,
+        };
+      case "4h":
+        return {
+          enabled: true,
+          apiInterval: "1hour",
+          range: "1w",
+          aggregate: 4,
+        };
+      default:
+        return {
+          enabled: false,
+          apiInterval: "1hour",
+          range: "1d",
+          aggregate: 1,
+        };
+    }
+  }, [candleInterval, dateRange]);
+
+  const {
+    data: intradayResponse,
+    isLoading: intradayLoading,
+    isFetching: intradayFetching,
+    error: intradayError,
+  } = useStockIntraday(
+    selectedSymbol,
+    intradaySettings.apiInterval,
+    intradaySettings.range,
+    { enabled: intradaySettings.enabled },
+  );
+
+  const intradayData = intradayResponse?.data ?? [];
+  const isIntradayActive = intradaySettings.enabled && intradayData.length > 0 && !intradayError;
+
+  const isIntradayPending = intradayLoading || intradayFetching;
+  const intradayErrorMessage = intradayError
+    ? intradayError instanceof Error
+      ? intradayError.message
+      : typeof intradayError === "object" && intradayError !== null && "message" in intradayError
+        ? String((intradayError as { message?: unknown }).message ?? intradayError)
+        : String(intradayError)
+    : null;
+
+  const chartPriceSeries = useMemo<PriceData[]>(() => {
+    if (isIntradayActive) {
+      return bucketIntradayData(intradayData, intradaySettings.aggregate);
+    }
+    return displayData;
+  }, [isIntradayActive, intradayData, intradaySettings.aggregate, displayData]);
+
+  const chartSupertrendResult = useMemo<SuperTrendAIResult | null>(() => {
+    if (!selectedIndicators.supertrendAI || chartPriceSeries.length === 0) {
+      return null;
+    }
+    return calculateSuperTrendAI(chartPriceSeries);
+  }, [selectedIndicators.supertrendAI, chartPriceSeries]);
+
+  const priceChartData = useMemo(() => {
+    const overlayByDate = new Map<string, SuperTrendAISeriesPoint>();
+
+    if (chartSupertrendResult) {
+      chartSupertrendResult.series.forEach((point) => {
+        overlayByDate.set(point.date, point);
+      });
+    }
+
+    const effectiveInterval = isIntradayActive ? candleInterval : "1d";
+
+    return chartPriceSeries.map((item) => {
+      const dateObj = new Date(item.date);
+      const formattedDate = (() => {
+        if (effectiveInterval === "1d") {
+          return dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        }
+        if (effectiveInterval === "4h") {
+          return dateObj.toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric" });
+        }
+        return dateObj.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+      })();
+
+      const overlay = overlayByDate.get(item.date);
+      const supertrend = overlay?.supertrend ?? null;
+      const atrValue = overlay?.atr ?? null;
+      const close = item.close;
+      const open = item.open ?? item.close;
+      const high = item.high ?? Math.max(open, close);
+      const low = item.low ?? Math.min(open, close);
+
+      return {
+        date: formattedDate,
+        rawDate: item.date,
+        price: close,
+        open,
+        high,
+        low,
+        volume: item.volume ?? 0,
+        trailLong: overlay && overlay.trend === 1 && supertrend !== null ? supertrend : null,
+        trailShort: overlay && overlay.trend === -1 && supertrend !== null ? supertrend : null,
+        ama: overlay?.ama ?? null,
+        atrUpper: supertrend !== null && atrValue !== null ? supertrend + atrValue : null,
+        atrLower: supertrend !== null && atrValue !== null ? supertrend - atrValue : null,
+        upperBand: overlay?.upperBand ?? null,
+        lowerBand: overlay?.lowerBand ?? null,
+        buySignal: overlay?.signal === 1 ? (supertrend ?? close) : null,
+        sellSignal: overlay?.signal === -1 ? (supertrend ?? close) : null,
+        supertrend,
+        trendDirection: overlay?.trend ?? 0,
+      };
+    });
+  }, [chartPriceSeries, chartSupertrendResult, candleInterval, isIntradayActive]);
 
   const { low52Week, high52Week } = useMemo(() => {
     if (!calculationData.length) {
@@ -361,11 +573,29 @@ const Index = () => {
 
         {/* Main Price Chart */}
         <section>
+          <TradingViewChart
+            symbol={selectedSymbol}
+            range={dateRange}
+            onRangeChange={handleDateRangeChange}
+            showSupertrend={Boolean(selectedIndicators.supertrendAI)}
+          />
+        </section>
+
+        {/* Legacy Recharts Visualization */}
+        <section>
           <PriceChart 
             symbol={selectedSymbol} 
-            data={simplePriceData} 
+            data={priceChartData} 
             selectedRange={dateRange}
             onRangeChange={handleDateRangeChange}
+            candleInterval={candleInterval}
+            onCandleIntervalChange={setCandleInterval}
+            isIntradayActive={isIntradayActive}
+            isIntradayLoading={isIntradayPending}
+            intradayError={intradayErrorMessage}
+            intradayRange={intradaySettings.range}
+            showSupertrend={Boolean(selectedIndicators.supertrendAI)}
+            supertrendMeta={chartSupertrendResult?.info ?? null}
           />
         </section>
 
@@ -376,6 +606,9 @@ const Index = () => {
             symbol={selectedSymbol}
             data={calculationData}
             displayData={displayData}
+            selectedIndicators={selectedIndicators}
+            onSelectedIndicatorsChange={setSelectedIndicators}
+            supertrendAIResult={dashboardSupertrendResult}
           />
         </section>
       </main>
