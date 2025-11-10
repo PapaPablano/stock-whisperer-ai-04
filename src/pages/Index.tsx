@@ -83,61 +83,19 @@ const Index = () => {
   // Full dataset for indicator calculations
   const calculationData = useMemo(() => {
     if (!historicalData || historicalData.length === 0) {
-      // Generate mock data - always generate enough for calculations
-      const mockData: PriceData[] = [];
-      const basePrice = 170;
-      let currentPrice = basePrice;
-      
-      // Always generate enough mock data for longest indicator (SMA 200)
-      let daysToGenerate = 365; // Default to 1 year for mock data
-      switch(calculationRange) {
-        case '1y':
-          daysToGenerate = 365;
-          break;
-        case '2y':
-          daysToGenerate = 730;
-          break;
-        case '5y':
-          daysToGenerate = 1825;
-          break;
-        default:
-          daysToGenerate = 365;
-      }
-      
-      console.log(`[Index] Generating ${daysToGenerate} days of mock data for calculation range: ${calculationRange}`);
-      
-      for (let i = daysToGenerate - 1; i >= 0; i--) {
-        const date = new Date();
-        date.setDate(date.getDate() - i);
-        
-        const change = (Math.random() - 0.5) * 5;
-        currentPrice += change;
-        const high = currentPrice + Math.random() * 3;
-        const low = currentPrice - Math.random() * 3;
-        
-        mockData.push({
-          date: date.toISOString().split('T')[0], // YYYY-MM-DD format
-          open: parseFloat((currentPrice - change).toFixed(2)),
-          high: parseFloat(high.toFixed(2)),
-          low: parseFloat(low.toFixed(2)),
-          close: parseFloat(currentPrice.toFixed(2)),
-          volume: Math.floor(Math.random() * 50000000) + 30000000,
-        });
-      }
-      return mockData;
+      return [] as PriceData[];
     }
-    
-    // Ensure dates are in consistent format
+
     const formattedData = historicalData.map(item => ({
       ...item,
-      date: typeof item.date === 'string' ? item.date.split('T')[0] : item.date,
+      date: typeof item.date === "string" ? item.date.split("T")[0] : item.date,
     }));
-    
+
     console.log(`[Index] Using ${historicalData.length} data points for calculations`);
     console.log(`[Index] Calculation date range: ${formattedData[0]?.date} to ${formattedData[formattedData.length - 1]?.date}`);
-    
+
     return formattedData;
-  }, [historicalData, calculationRange]);
+  }, [historicalData]);
   
   // Filter data for display based on selected date range
   const displayData = useMemo(() => {
