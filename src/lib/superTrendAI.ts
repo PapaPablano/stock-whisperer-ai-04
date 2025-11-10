@@ -735,9 +735,19 @@ export const calculateSuperTrendAI = (
     factorsTested: factors,
     signalMetrics: [],
     fromCluster: config.fromCluster,
+    selectedClusterId,
+    selectedClusterLabel,
+    rawPerformanceIndex,
+    dataOffset,
+    regimeMetrics: {
+      averageTrendRun,
+      churnRate,
+    },
+    confirmBars: config.confirmBars,
+    allFactorAnalytics,
   };
 
-  info.signalMetrics = calculateSignalMetrics(data, series, info);
+  info.signalMetrics = calculateSignalMetrics(dataSlice, series, info, atr);
 
   return {
     series,
