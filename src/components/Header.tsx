@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { useStockSearch } from "@/hooks/useStockSearch";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
-import { ThemeToggle } from "@/components/ThemeToggle";
 
 interface HeaderProps {
   onSymbolSelect?: (symbol: string) => void;
@@ -111,7 +110,6 @@ export const Header = ({ onSymbolSelect }: HeaderProps) => {
           <span className="text-sm text-muted-foreground hidden sm:inline">
             Market: <span className="text-success font-medium">Open</span>
           </span>
-          <ThemeToggle />
         </div>
       </div>
     </header>

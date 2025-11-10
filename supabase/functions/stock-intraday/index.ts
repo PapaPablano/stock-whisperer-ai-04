@@ -1,4 +1,3 @@
-/// <reference lib="deno.ns" />
 import { supabaseAdmin } from '../_shared/supabaseAdminClient.ts'
 import { FinnhubClient } from '../../../services/finnhub.ts'
 import { BarsFallback, fetchNormalizedFinnhubBars } from '../../../services/polygonFallback.ts'
