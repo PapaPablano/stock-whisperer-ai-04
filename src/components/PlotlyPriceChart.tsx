@@ -211,7 +211,7 @@ export const PlotlyPriceChart: React.FC<PlotlyPriceChartProps> = ({
 
     if (hasFinite(tsSeriesValues)) {
       overlayTraces.push({
-        type: "scattergl",
+        type: "scatter",
         mode: "lines",
         x: xValues,
         y: tsSeriesValues,
@@ -225,7 +225,7 @@ export const PlotlyPriceChart: React.FC<PlotlyPriceChartProps> = ({
 
     if (hasFinite(tsBullValues)) {
       overlayTraces.push({
-        type: "scattergl",
+        type: "scatter",
         mode: "lines",
         x: xValues,
         y: tsBullValues,
@@ -239,7 +239,7 @@ export const PlotlyPriceChart: React.FC<PlotlyPriceChartProps> = ({
 
     if (hasFinite(tsBearValues)) {
       overlayTraces.push({
-        type: "scattergl",
+        type: "scatter",
         mode: "lines",
         x: xValues,
         y: tsBearValues,
@@ -253,7 +253,7 @@ export const PlotlyPriceChart: React.FC<PlotlyPriceChartProps> = ({
 
     if (hasFinite(perfAmaValues)) {
       overlayTraces.push({
-        type: "scattergl",
+        type: "scatter",
         mode: "lines",
         x: xValues,
         y: perfAmaValues,
@@ -267,7 +267,7 @@ export const PlotlyPriceChart: React.FC<PlotlyPriceChartProps> = ({
 
     if (hasFinite(amaBullValues)) {
       overlayTraces.push({
-        type: "scattergl",
+        type: "scatter",
         mode: "lines",
         x: xValues,
         y: amaBullValues,
@@ -281,7 +281,7 @@ export const PlotlyPriceChart: React.FC<PlotlyPriceChartProps> = ({
 
     if (hasFinite(amaBearValues)) {
       overlayTraces.push({
-        type: "scattergl",
+        type: "scatter",
         mode: "lines",
         x: xValues,
         y: amaBearValues,
@@ -309,7 +309,7 @@ export const PlotlyPriceChart: React.FC<PlotlyPriceChartProps> = ({
 
     if (buySignals.length > 0) {
       overlayTraces.push({
-        type: "scattergl",
+        type: "scatter",
         mode: "markers",
         x: buySignals.map((item) => item.x),
         y: buySignals.map((item) => item.y),
@@ -327,7 +327,7 @@ export const PlotlyPriceChart: React.FC<PlotlyPriceChartProps> = ({
 
     if (sellSignals.length > 0) {
       overlayTraces.push({
-        type: "scattergl",
+        type: "scatter",
         mode: "markers",
         x: sellSignals.map((item) => item.x),
         y: sellSignals.map((item) => item.y),
