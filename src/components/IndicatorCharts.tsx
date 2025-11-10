@@ -13,6 +13,16 @@ import {
   ReferenceArea,
 } from 'recharts';
 
+// Utility function to calculate appropriate X-axis tick interval based on data length
+// This ensures readable date labels regardless of the selected time range
+const getTickInterval = (dataLength: number): number => {
+  if (dataLength <= 30) return 0; // Show all ticks for 1 month or less
+  if (dataLength <= 90) return Math.floor(dataLength / 10); // ~10 ticks for 3 months
+  if (dataLength <= 180) return Math.floor(dataLength / 8); // ~8 ticks for 6 months
+  if (dataLength <= 365) return Math.floor(dataLength / 10); // ~10 ticks for 1 year
+  return Math.floor(dataLength / 12); // ~12 ticks for 5 years
+};
+
 interface RSIChartProps {
   data: Array<{
     date: string;
@@ -36,6 +46,7 @@ export function RSIChart({ data }: RSIChartProps) {
               height={30}
               angle={-45}
               textAnchor="end"
+              interval={getTickInterval(data.length)}
             />
             <YAxis
               domain={[0, 100]}
@@ -114,6 +125,7 @@ export function MACDChart({ data }: MACDChartProps) {
               height={30}
               angle={-45}
               textAnchor="end"
+              interval={getTickInterval(data.length)}
             />
             <YAxis
               tick={{ fill: '#9ca3af', fontSize: 10 }}
@@ -185,6 +197,7 @@ export function StochasticChart({ data }: StochasticChartProps) {
               height={30}
               angle={-45}
               textAnchor="end"
+              interval={getTickInterval(data.length)}
             />
             <YAxis
               domain={[0, 100]}
@@ -272,6 +285,7 @@ export function KDJChart({ data }: KDJChartProps) {
               height={30}
               angle={-45}
               textAnchor="end"
+              interval={getTickInterval(data.length)}
             />
             <YAxis
               domain={['dataMin - 10', 'dataMax + 10']}
@@ -368,6 +382,7 @@ export function VolumeIndicatorChart({ data, title, color = '#3b82f6' }: VolumeI
               height={30}
               angle={-45}
               textAnchor="end"
+              interval={getTickInterval(data.length)}
             />
             <YAxis
               tick={{ fill: '#9ca3af', fontSize: 10 }}
