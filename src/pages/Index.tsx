@@ -91,6 +91,8 @@ const Index = () => {
       date: typeof item.date === "string" ? item.date.split("T")[0] : item.date,
     }));
 
+    formattedData.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
     console.log(`[Index] Using ${historicalData.length} data points for calculations`);
     console.log(`[Index] Calculation date range: ${formattedData[0]?.date} to ${formattedData[formattedData.length - 1]?.date}`);
 
@@ -138,6 +140,8 @@ const Index = () => {
       console.log(`[Index] Display date range: ${filtered[0]?.date} to ${filtered[filtered.length - 1]?.date}`);
     }
     
+    filtered.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
     return filtered;
   }, [calculationData, dateRange]);
 
