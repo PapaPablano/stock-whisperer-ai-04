@@ -3,6 +3,7 @@ import { StockCard } from "@/components/StockCard";
 import { MetricCard } from "@/components/MetricCard";
 import { TechnicalAnalysisDashboard } from "@/components/TechnicalAnalysisDashboard";
 import { PlotlyPriceChart } from "@/components/PlotlyPriceChart";
+import { NewsWidget } from "@/components/NewsWidget";
 import { featuredStocks } from "@/lib/mockData";
 import { TrendingUp, DollarSign, BarChart3, Activity } from "lucide-react";
 import { useStockQuote } from "@/hooks/useStockQuote";
@@ -551,97 +552,105 @@ const Index = () => {
           </div>
         </section>
 
-        {/* Main Plotly Chart */}
-        <section>
-          <Card className="h-full">
-            <CardHeader className="gap-4">
-              <div className="flex flex-col gap-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <CardTitle className="text-lg">{selectedSymbol} Overview</CardTitle>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="flex flex-wrap gap-1">
-                      {TIME_BUTTONS.map((button) => {
-                        const value = RANGE_MAP[button.label];
-                        const disabled = value === undefined;
-                        const isActive = value === dateRange;
+        {/* Main Chart and News Section - Split Layout */}
+        <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Main Chart - Takes 2 columns */}
+          <div className="lg:col-span-2">
+            <Card className="h-full">
+              <CardHeader className="gap-4">
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <CardTitle className="text-lg">{selectedSymbol} Overview</CardTitle>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex flex-wrap gap-1">
+                        {TIME_BUTTONS.map((button) => {
+                          const value = RANGE_MAP[button.label];
+                          const disabled = value === undefined;
+                          const isActive = value === dateRange;
 
-                        return (
-                          <Button
-                            key={button.label}
-                            variant={isActive ? "default" : "ghost"}
-                            size="sm"
-                            className="text-xs"
-                            disabled={disabled}
-                            onClick={() => {
-                              if (!disabled && value) {
-                                handleDateRangeChange(value);
-                              }
-                            }}
-                          >
-                            {button.label}
-                          </Button>
-                        );
-                      })}
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {CANDLE_INTERVAL_OPTIONS.map((option) => {
-                        const active = candleInterval === option.value;
-                        const disabled = option.value !== "1d" && intradayUnavailable;
-                        return (
-                          <Button
-                            key={option.value}
-                            variant={active ? "secondary" : "ghost"}
-                            size="sm"
-                            className="text-xs"
-                            disabled={disabled}
-                            onClick={() => {
-                              if (!disabled) {
-                                setCandleInterval(option.value as CandleInterval);
-                              }
-                            }}
-                          >
-                            {option.label.toUpperCase()}
-                          </Button>
-                        );
-                      })}
+                          return (
+                            <Button
+                              key={button.label}
+                              variant={isActive ? "default" : "ghost"}
+                              size="sm"
+                              className="text-xs"
+                              disabled={disabled}
+                              onClick={() => {
+                                if (!disabled && value) {
+                                  handleDateRangeChange(value);
+                                }
+                              }}
+                            >
+                              {button.label}
+                            </Button>
+                          );
+                        })}
+                      </div>
+                      <div className="flex flex-wrap gap-1">
+                        {CANDLE_INTERVAL_OPTIONS.map((option) => {
+                          const active = candleInterval === option.value;
+                          const disabled = option.value !== "1d" && intradayUnavailable;
+                          return (
+                            <Button
+                              key={option.value}
+                              variant={active ? "secondary" : "ghost"}
+                              size="sm"
+                              className="text-xs"
+                              disabled={disabled}
+                              onClick={() => {
+                                if (!disabled) {
+                                  setCandleInterval(option.value as CandleInterval);
+                                }
+                              }}
+                            >
+                              {option.label.toUpperCase()}
+                            </Button>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
+                  {chartSupertrendResult?.info && selectedIndicators.supertrendAI && (
+                    <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                      <span>
+                        <span className="font-semibold text-foreground">Target Factor:</span>{" "}
+                        {chartSupertrendResult.info.targetFactor.toFixed(2)}
+                      </span>
+                      <span>
+                        <span className="font-semibold text-foreground">Performance Index:</span>{" "}
+                        {chartSupertrendResult.info.performanceIndex.toFixed(4)}
+                      </span>
+                      <span>
+                        <span className="font-semibold text-foreground">Base Signals:</span>{" "}
+                        {chartSupertrendResult.info.signalMetrics.length}
+                      </span>
+                    </div>
+                  )}
                 </div>
-                {chartSupertrendResult?.info && selectedIndicators.supertrendAI && (
-                  <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-                    <span>
-                      <span className="font-semibold text-foreground">Target Factor:</span>{" "}
-                      {chartSupertrendResult.info.targetFactor.toFixed(2)}
-                    </span>
-                    <span>
-                      <span className="font-semibold text-foreground">Performance Index:</span>{" "}
-                      {chartSupertrendResult.info.performanceIndex.toFixed(4)}
-                    </span>
-                    <span>
-                      <span className="font-semibold text-foreground">Base Signals:</span>{" "}
-                      {chartSupertrendResult.info.signalMetrics.length}
-                    </span>
-                  </div>
+              </CardHeader>
+              <CardContent>
+                <div className="h-[560px]">
+                  <PlotlyPriceChart
+                    symbol={selectedSymbol}
+                    interval={chartInterval}
+                    chartDataOverride={plotlyChartDataOverride}
+                    height={560}
+                  />
+                </div>
+                {intradayErrorMessage && (
+                  <p className="mt-3 text-xs text-destructive">{intradayErrorMessage}</p>
                 )}
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="h-[560px]">
-                <PlotlyPriceChart
-                  symbol={selectedSymbol}
-                  interval={chartInterval}
-                  chartDataOverride={plotlyChartDataOverride}
-                  height={560}
-                />
-              </div>
-              {intradayErrorMessage && (
-                <p className="mt-3 text-xs text-destructive">{intradayErrorMessage}</p>
-              )}
-              {isIntradayPending && (
-                <p className="mt-3 text-xs text-muted-foreground">Loading intraday data…</p>
-              )}
-            </CardContent>
-          </Card>
+                {isIntradayPending && (
+                  <p className="mt-3 text-xs text-muted-foreground">Loading intraday data…</p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* News Widget Sidebar - Takes 1 column */}
+          <div className="lg:col-span-1">
+            <NewsWidget symbol={selectedSymbol} limit={10} height={740} />
+          </div>
         </section>
 
         {/* Technical Analysis Dashboard */}
