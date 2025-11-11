@@ -172,7 +172,7 @@ const shiftDays = (date: Date, days: number) => {
 const computeRangeStart = (range: string, endDate: Date): Date => {
   switch (range) {
     case '1d':
-      return shiftDays(endDate, 2)
+      return shiftDays(endDate, 1)
     case '5d':
       return shiftDays(endDate, 7)
     case '1w':
