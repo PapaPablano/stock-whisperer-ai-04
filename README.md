@@ -63,31 +63,53 @@ This project is built with:
 
 ## Stock Data APIs
 
-This application uses a layered fallback system for maximum data reliability:
+This application uses **Alpaca Market Data API** as the primary data source for professional-grade market data.
 
-### Primary: Polygon.io API
-- Minute and hourly aggregates for intraday experience
-- Supports up to two years of historical intraday data
-- **Required Environment Variable**: `POLYGON_API_KEY`
+### Primary: Alpaca Market Data API ⭐
+- Real-time stock quotes (IEX or SIP feeds)
+- Historical and intraday OHLCV data (up to 2 years)
+- WebSocket streaming for live price updates
+- Real-time market news feed
+- Cryptocurrency and options data support
+- **Required Environment Variables**: `APCA_API_KEY_ID`, `APCA_API_SECRET_KEY`
+- **Optional**: `ALPACA_STOCK_FEED` (values: `iex` or `sip`, default: `iex`)
 
-### Secondary: Yahoo Finance API
-- Free, no API key required
-- Provides quote and historical fallbacks when Polygon throttles or fails
+### Features Powered by Alpaca:
+✅ **Real-Time Streaming** - Live trades, quotes, and bars via WebSocket  
+✅ **News Feed** - Real-time market news and analysis  
+✅ **Smart Caching** - 45-second cache via Supabase for optimal performance  
+✅ **Multiple Data Feeds** - IEX (free) or SIP (consolidated, paid)
 
-### Tertiary: Marketstack API (optional)
-- Existing integration for specific historical use cases
-- **Environment Variable**: `MARKETSTACK_API_KEY`
+### Supabase Integration
+
+All data flows through **Supabase Edge Functions** for:
+- Secure API key management
+- Intelligent caching in PostgreSQL (`stock_cache` table)
+- Real-time data synchronization
+- Edge computing for low latency
+
+**Supabase Project**: https://supabase.com/dashboard/project/iwwdxshzrxilpzehymeu
 
 ## Environment Variables
 
-Add these to your Supabase project settings:
+Add these to your [Supabase project settings](https://supabase.com/dashboard/project/iwwdxshzrxilpzehymeu/settings/api):
 
 ```bash
-POLYGON_API_KEY=your_polygon_api_key_here
-MARKETSTACK_API_KEY=your_marketstack_api_key_here
+# Alpaca API Credentials (Required)
+APCA_API_KEY_ID=your_alpaca_key_id
+APCA_API_SECRET_KEY=your_alpaca_secret_key
+
+# Data Feed Selection (Optional, default: iex)
+ALPACA_STOCK_FEED=iex  # or 'sip' for premium consolidated feed
 ```
 
-**Note**: Polygon is required for intraday data; the others act as fallbacks when available.
+**Getting Started with Alpaca:**
+1. Sign up at [Alpaca Markets](https://alpaca.markets)
+2. Generate API keys from your dashboard
+3. Add keys to Supabase Edge Functions secrets
+4. Deploy/redeploy Edge Functions
+
+See [docs/ALPACA_INTEGRATION.md](./docs/ALPACA_INTEGRATION.md) for detailed setup instructions.
 
 ## How can I deploy this project?
 
