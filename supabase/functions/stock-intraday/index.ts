@@ -3,7 +3,7 @@ import {
   createDefaultAlpacaClient,
   type AlpacaRestClient,
   type AlpacaBar,
-} from '../../../services/alpaca/client.ts'
+} from '../_shared/alpaca/client.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

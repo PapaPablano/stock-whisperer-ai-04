@@ -1,4 +1,4 @@
-// services/alpaca/client.ts
+// supabase/functions/_shared/alpaca/client.ts
 // Lightweight Alpaca Market Data REST client used across Supabase Edge functions.
 
 export type AlpacaCredentials = {
@@ -135,7 +135,7 @@ export class AlpacaRestClient {
   }
 
   async getBars(params: GetBarsParams): Promise<{ bars: AlpacaBar[]; symbol: string; next_page_token?: string }> {
-  const { symbol, timeframe, start, end, limit, adjustment, feed, sort, pageToken } = params;
+    const { symbol, timeframe, start, end, limit, adjustment, feed, sort, pageToken } = params;
     const path = `/v2/stocks/${encodeURIComponent(symbol)}/bars`;
     const url = new URL(path, this.baseUrl);
     url.searchParams.set("timeframe", timeframe);
@@ -144,8 +144,8 @@ export class AlpacaRestClient {
     if (limit) url.searchParams.set("limit", String(limit));
     if (adjustment) url.searchParams.set("adjustment", adjustment);
     if (feed) url.searchParams.set("feed", feed);
-  if (sort) url.searchParams.set("sort", sort);
-  if (pageToken) url.searchParams.set("page_token", pageToken);
+    if (sort) url.searchParams.set("sort", sort);
+    if (pageToken) url.searchParams.set("page_token", pageToken);
     return this.request<{ bars: AlpacaBar[]; symbol: string; next_page_token?: string }>(url);
   }
 

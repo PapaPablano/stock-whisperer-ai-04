@@ -2,7 +2,7 @@ import { supabaseAdmin } from '../_shared/supabaseAdminClient.ts'
 import {
   createDefaultAlpacaClient,
   type AlpacaRestClient,
-} from '../../../services/alpaca/client.ts'
+} from '../_shared/alpaca/client.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

@@ -1,4 +1,4 @@
-// services/alpaca/aggregator.ts
+// supabase/functions/_shared/alpaca/aggregator.ts
 // Utilities to aggregate Alpaca trade stream events into one-minute OHLCV bars suitable for stock_cache upserts.
 
 export type NormalizedTradeEvent = {

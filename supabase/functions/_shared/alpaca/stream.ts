@@ -1,4 +1,4 @@
-// services/alpaca/stream.ts
+// supabase/functions/_shared/alpaca/stream.ts
 // Shared Alpaca Market Data WebSocket helpers for equities, crypto, news, and options feeds.
 
 import type { AlpacaCredentials } from "./client.ts";
