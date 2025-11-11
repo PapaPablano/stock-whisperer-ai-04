@@ -485,10 +485,11 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background">
+      {/* 1. Header */}
       <Header onSymbolSelect={handleSymbolSelect} />
       
       <main className="container mx-auto px-4 py-6 space-y-6">
-        {/* Featured Stocks */}
+        {/* Featured Stocks Watchlist */}
         <section>
           <h2 className="text-2xl font-bold mb-4">Market Overview</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -502,9 +503,9 @@ const Index = () => {
           </div>
         </section>
 
-        {/* Currently Viewing Stock */}
+        {/* 2. Selected Stock Header */}
         <section className="space-y-4">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <h2 className="text-2xl font-bold">{selectedSymbol}</h2>
             {liveQuote?.name && (
               <Badge variant="secondary" className="text-sm">
@@ -535,28 +536,9 @@ const Index = () => {
           </div>
         </section>
 
-        {/* Key Metrics Overview */}
+        {/* 3. Main Chart - Full Width */}
         <section>
-          <h3 className="text-lg font-semibold mb-4">Key Metrics</h3>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            {keyMetrics.map((metric) => (
-              <MetricCard
-                key={metric.title}
-                title={metric.title}
-                value={metric.value}
-                subtitle={metric.subtitle}
-                icon={metric.icon}
-                trend={metric.trend}
-              />
-            ))}
-          </div>
-        </section>
-
-        {/* Main Chart and News Section - Split Layout */}
-        <section className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Main Chart - Takes 2 columns */}
-          <div className="lg:col-span-2">
-            <Card className="h-full">
+          <Card className="h-full">
               <CardHeader className="gap-4">
                 <div className="flex flex-col gap-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -628,32 +610,26 @@ const Index = () => {
                   )}
                 </div>
               </CardHeader>
-              <CardContent>
-                <div className="h-[560px]">
-                  <PlotlyPriceChart
-                    symbol={selectedSymbol}
-                    interval={chartInterval}
-                    chartDataOverride={plotlyChartDataOverride}
-                    height={560}
-                  />
-                </div>
-                {intradayErrorMessage && (
-                  <p className="mt-3 text-xs text-destructive">{intradayErrorMessage}</p>
-                )}
-                {isIntradayPending && (
-                  <p className="mt-3 text-xs text-muted-foreground">Loading intraday data…</p>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-
-          {/* News Widget Sidebar - Takes 1 column */}
-          <div className="lg:col-span-1">
-            <NewsWidget symbol={selectedSymbol} limit={10} height={740} />
-          </div>
+            <CardContent>
+              <div className="h-[560px]">
+                <PlotlyPriceChart
+                  symbol={selectedSymbol}
+                  interval={chartInterval}
+                  chartDataOverride={plotlyChartDataOverride}
+                  height={560}
+                />
+              </div>
+              {intradayErrorMessage && (
+                <p className="mt-3 text-xs text-destructive">{intradayErrorMessage}</p>
+              )}
+              {isIntradayPending && (
+                <p className="mt-3 text-xs text-muted-foreground">Loading intraday data…</p>
+              )}
+            </CardContent>
+          </Card>
         </section>
 
-        {/* Technical Analysis Dashboard */}
+        {/* 4. Technical Analysis Dashboard - Full Width */}
         <section>
           <h2 className="text-2xl font-bold mb-4">Technical Indicators</h2>
           <TechnicalAnalysisDashboard
@@ -664,6 +640,37 @@ const Index = () => {
             onSelectedIndicatorsChange={setSelectedIndicators}
             supertrendAIResult={dashboardSupertrendResult}
           />
+        </section>
+
+        {/* 5. Split Layout: News Widget (left) and Key Metrics (right) */}
+        <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* News Widget - Left side */}
+          <div>
+            <NewsWidget symbol={selectedSymbol} limit={10} height={600} />
+          </div>
+
+          {/* Key Metrics - Right side */}
+          <div>
+            <Card>
+              <CardHeader>
+                <CardTitle>Key Metrics</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {keyMetrics.map((metric) => (
+                    <MetricCard
+                      key={metric.title}
+                      title={metric.title}
+                      value={metric.value}
+                      subtitle={metric.subtitle}
+                      icon={metric.icon}
+                      trend={metric.trend}
+                    />
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         </section>
       </main>
     </div>
