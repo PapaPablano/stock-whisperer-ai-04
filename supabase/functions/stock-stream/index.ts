@@ -52,7 +52,7 @@ Deno.serve(async (req) => {
         const encoder = new TextEncoder()
 
         // Helper to send SSE message
-        const sendEvent = (event: string, data: any) => {
+        const sendEvent = (event: string, data: unknown) => {
           const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
           controller.enqueue(encoder.encode(message))
         }
@@ -87,7 +87,7 @@ Deno.serve(async (req) => {
                 }
               })
             },
-            onMessage: (data: any) => {
+            onMessage: (data: unknown) => {
               // Forward Alpaca messages to client
               // Alpaca sends arrays of messages
               if (Array.isArray(data)) {

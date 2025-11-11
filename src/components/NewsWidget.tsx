@@ -114,11 +114,12 @@ export const NewsWidget = ({
   height = 600,
   showImages = true 
 }: NewsWidgetProps) => {
-  // Use appropriate hook based on whether symbol is provided
-  const newsQuery = symbol 
-    ? useSymbolNews(symbol, limit)
-    : useMarketNews(limit);
-
+  // Always call both hooks to satisfy React hooks rules
+  const symbolNewsQuery = useSymbolNews(symbol || 'AAPL', limit);
+  const marketNewsQuery = useMarketNews(limit);
+  
+  // Use appropriate query based on whether symbol is provided
+  const newsQuery = symbol ? symbolNewsQuery : marketNewsQuery;
   const { data: newsData, isLoading, error } = newsQuery;
 
   const title = symbol ? `${symbol} News` : "Market News";

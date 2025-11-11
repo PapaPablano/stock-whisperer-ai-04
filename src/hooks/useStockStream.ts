@@ -181,10 +181,15 @@ export const useStockStream = (options: UseStockStreamOptions): UseStockStreamRe
         }
       });
 
-      eventSource.addEventListener('error', (event: any) => {
+      eventSource.addEventListener('error', (event) => {
         console.error('Stream error event:', event);
-        const errorMsg = event.data ? JSON.parse(event.data).message : 'Stream error';
-        setError(errorMsg);
+        try {
+          const data = (event as MessageEvent).data;
+          const errorMsg = data ? JSON.parse(data).message : 'Stream error';
+          setError(errorMsg);
+        } catch {
+          setError('Stream error');
+        }
         setStatus('error');
       });
 
@@ -231,6 +236,7 @@ export const useStockStream = (options: UseStockStreamOptions): UseStockStreamRe
     return () => {
       disconnect();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, symbols.join(','), subscribeTrades, subscribeQuotes, subscribeBars]);
 
   return {

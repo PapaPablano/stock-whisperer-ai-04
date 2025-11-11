@@ -148,8 +148,8 @@ const fetchAlpacaNews = async (params: {
     url.searchParams.set('page_token', pageToken)
   }
 
-  // Use the private request method by casting
-  const response = await (client as any).request<AlpacaNewsResponse>(url)
+  // Use the private request method by accessing it
+  const response = await (client as unknown as { request: <T>(url: URL) => Promise<T> }).request<AlpacaNewsResponse>(url)
   return response
 }
 
