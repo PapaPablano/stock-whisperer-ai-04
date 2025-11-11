@@ -25,7 +25,7 @@ const data = await fetchHistoricalData('AAPL', '1mo');
 ```
 
 #### 3. `fetchIntradayData(symbol: string, interval: string, range: string)`
-Fetches minute-level intraday data via Polygon aggregates API (up to two years).
+Fetches minute-level intraday data through Alpaca Market Data aggregates (up to two years depending on plan).
 
 ```typescript
 const intraday = await fetchIntradayData('AAPL', '5m', '1d');
@@ -138,19 +138,19 @@ Cache Hit? → Return cached data
     ↓
 Cache Miss? → Call Supabase Edge Function
     ↓
-Polygon.io API (intraday)
+Alpaca Market Data API (quotes, intraday, historical)
     ↓ (fallback)
-Yahoo Finance API (selected use cases)
+Yahoo Finance API (symbol search only)
     ↓
 Store in Cache
     ↓
 Return to User
 ```
 
-## Three-Tier API Fallback
+## Data Provider Strategy
 
-1. **Polygon.io** (Primary intraday + aggregates)
-2. **Yahoo Finance** (Secondary quote fallback)
+1. **Alpaca Market Data** (Primary source for quotes, intraday, historical)
+2. **Yahoo Finance** (Secondary fallback for ticker search metadata)
 3. **Internal cache** (Primary for previously fetched data)
 
 ## Performance Optimization
@@ -177,19 +177,19 @@ Return to User
 6. Add news sentiment analysis
 7. Build ML prediction models
 
-## API Limits
+## API Limits & Caching Guidance
 
-### Polygon Starter Tier (reference)
-- 5 API calls/minute (burst up to 120/minute)
-- Aggregates up to 2 years per request
-- Intraday minute/hour bars included
+### Alpaca Market Data (reference)
+- IEX feed included on free tier; SIP feed available on paid plans
+- Aggregates support up to 2 years of minute data
+- REST quotas vary by plan; streaming quotes reduce REST load when connected
 
 ### Recommended Caching
 With proper caching, you can support:
 - 100+ active users
 - Real-time quote updates every minute
 - Historical data with infinite cache
-- Minimal API consumption
+- Minimal REST consumption thanks to cache + streaming
 
 ## Troubleshooting
 
@@ -200,7 +200,7 @@ Check that `stock_cache` table exists and has proper structure.
 Ensure user is authenticated before accessing user-specific tables.
 
 ### API errors?
-Verify `POLYGON_API_KEY` is set in Supabase Edge Functions secrets.
+Verify `APCA_API_KEY_ID` and `APCA_API_SECRET_KEY` are set in Supabase Edge Functions secrets. Optionally configure `ALPACA_STOCK_FEED` (`iex` or `sip`).
 
 ## Support
 

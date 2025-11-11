@@ -1,4 +1,8 @@
 import { supabaseAdmin } from '../_shared/supabaseAdminClient.ts'
+import {
+  createDefaultAlpacaClient,
+  type AlpacaRestClient,
+} from '../../../services/alpaca/client.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -57,6 +61,90 @@ const setCachedQuote = async (cacheKey: string, payload: Record<string, unknown>
   }
 }
 
+type QuotePayload = {
+  symbol: string;
+  name: string;
+  price: number;
+  change: number;
+  changePercent: number;
+  volume: number | null;
+  high: number | null;
+  low: number | null;
+  open: number | null;
+  previousClose: number | null;
+  source: string;
+  cachedAt: string;
+  bid?: number | null;
+  ask?: number | null;
+  tradeTimestamp?: string;
+  cacheHit?: boolean;
+};
+
+const STOCK_FEED = (Deno.env.get('ALPACA_STOCK_FEED') ?? 'iex').toLowerCase() === 'sip' ? 'sip' : 'iex'
+
+let sharedAlpacaClient: AlpacaRestClient | null = null
+
+const getAlpacaClient = (): AlpacaRestClient => {
+  if (!sharedAlpacaClient) {
+    sharedAlpacaClient = createDefaultAlpacaClient()
+  }
+  return sharedAlpacaClient
+}
+
+const fetchQuoteFromAlpaca = async (symbol: string): Promise<QuotePayload> => {
+  const normalized = symbol.toUpperCase()
+
+  const client = getAlpacaClient()
+  const [tradeResp, quoteResp] = await Promise.all([
+    client.getLatestTrade(normalized, STOCK_FEED),
+    client.getLatestQuote(normalized, STOCK_FEED),
+  ])
+
+  const latestBarResponse = await client.getBars({
+    symbol: normalized,
+    timeframe: '1Day',
+    limit: 2,
+    sort: 'desc',
+    adjustment: 'split',
+    feed: STOCK_FEED,
+  })
+
+  const latestBar = latestBarResponse.bars.at(0) ?? null
+  const previousBar = latestBarResponse.bars.at(1) ?? null
+
+  let metadataName = normalized
+  try {
+    const metadata = await client.getTickerDetails(normalized)
+    metadataName = metadata.ticker?.name ?? normalized
+  } catch (error) {
+    console.warn(`Alpaca ticker metadata fetch failed for ${normalized}`, error)
+  }
+
+  const lastPrice = tradeResp.trade?.p ?? latestBar?.c ?? 0
+  const referencePrice = previousBar?.c ?? latestBar?.o ?? lastPrice
+  const change = lastPrice - (referencePrice ?? lastPrice)
+  const changePercent = referencePrice ? (change / referencePrice) * 100 : 0
+
+  return {
+    symbol: normalized,
+    name: metadataName,
+    price: lastPrice,
+    change,
+    changePercent,
+    volume: latestBar?.v ?? null,
+    high: latestBar?.h ?? null,
+    low: latestBar?.l ?? null,
+    open: latestBar?.o ?? null,
+    previousClose: previousBar?.c ?? latestBar?.o ?? null,
+    source: 'alpaca',
+    cachedAt: new Date().toISOString(),
+    bid: quoteResp.quote?.bp ?? null,
+    ask: quoteResp.quote?.ap ?? null,
+    tradeTimestamp: tradeResp.trade?.t ?? null,
+    cacheHit: false,
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
@@ -86,133 +174,13 @@ Deno.serve(async (req) => {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       )
     }
+  const alpacaQuote = await fetchQuoteFromAlpaca(normalizedSymbol)
 
-    // Try Marketstack first (primary source)
-    const marketstackApiKey = Deno.env.get('MARKETSTACK_API_KEY')
-    
-    if (marketstackApiKey) {
-      try {
-        const marketstackResponse = await fetch(
-          `http://api.marketstack.com/v2/eod/latest?access_key=${marketstackApiKey}&symbols=${normalizedSymbol}`
-        )
-        
-        if (marketstackResponse.ok) {
-          const marketstackData = await marketstackResponse.json()
-          
-          if (marketstackData.data && marketstackData.data.length > 0) {
-            const result = marketstackData.data[0]
-            
-            const data = {
-              symbol: result.symbol,
-              name: result.name || result.symbol, // v2 API provides company name
-              price: result.close,
-              change: result.close - result.open,
-              changePercent: ((result.close - result.open) / result.open) * 100,
-              volume: result.volume,
-              high: result.high,
-              low: result.low,
-              open: result.open,
-              previousClose: result.close, // Using close as previous close for EOD data
-              source: 'marketstack',
-              cachedAt: new Date().toISOString(),
-            }
+    await setCachedQuote(cacheKey, alpacaQuote)
 
-            await setCachedQuote(cacheKey, data)
-
-            console.log(`Successfully fetched from Marketstack: ${normalizedSymbol}`)
-            return new Response(
-              JSON.stringify(data),
-              { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-            )
-          }
-        }
-      } catch (marketstackError) {
-        console.log(`Marketstack failed for ${symbol}, trying Yahoo Finance...`, marketstackError)
-      }
-    } else {
-      console.log('MARKETSTACK_API_KEY not configured, skipping to Yahoo Finance...')
-    }
-
-    // Try Yahoo Finance second (no API key needed)
-    try {
-      const yahooResponse = await fetch(
-        `https://query1.finance.yahoo.com/v8/finance/chart/${normalizedSymbol}?interval=1d&range=1d`
-      )
-      
-      if (yahooResponse.ok) {
-        const yahooData = await yahooResponse.json()
-        const result = yahooData.chart.result[0]
-        const meta = result.meta
-        
-        const data = {
-          symbol: meta.symbol,
-          name: meta.shortName || meta.symbol,
-          price: meta.regularMarketPrice,
-          change: meta.regularMarketPrice - meta.previousClose,
-          changePercent: ((meta.regularMarketPrice - meta.previousClose) / meta.previousClose) * 100,
-          volume: meta.regularMarketVolume,
-          high: meta.regularMarketDayHigh,
-          low: meta.regularMarketDayLow,
-          open: meta.regularMarketOpen,
-          previousClose: meta.previousClose,
-          source: 'yahoo',
-          cachedAt: new Date().toISOString(),
-        }
-
-        await setCachedQuote(cacheKey, data)
-
-        console.log(`Successfully fetched from Yahoo Finance: ${normalizedSymbol}`)
-        return new Response(
-          JSON.stringify(data),
-          { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        )
-      }
-    } catch (yahooError) {
-      console.log(`Yahoo Finance failed for ${symbol}, trying Polygon.io...`, yahooError)
-    }
-
-    // Fallback to Polygon.io
-    const polygonApiKey = Deno.env.get('POLYGON_API_KEY')
-    if (!polygonApiKey) {
-      throw new Error('POLYGON_API_KEY not configured')
-    }
-
-    const polygonResponse = await fetch(
-      `https://api.polygon.io/v2/aggs/ticker/${normalizedSymbol}/prev?adjusted=true&apiKey=${polygonApiKey}`
-    )
-
-    if (!polygonResponse.ok) {
-      throw new Error(`Polygon API error: ${polygonResponse.statusText}`)
-    }
-
-    const polygonData = await polygonResponse.json()
-    
-    if (!polygonData.results || polygonData.results.length === 0) {
-      throw new Error('No data available for this symbol')
-    }
-
-    const result = polygonData.results[0]
-    
-    const data = {
-      symbol: polygonData.ticker,
-      name: polygonData.ticker,
-      price: result.c,
-      change: result.c - result.o,
-      changePercent: ((result.c - result.o) / result.o) * 100,
-      volume: result.v,
-      high: result.h,
-      low: result.l,
-      open: result.o,
-      previousClose: result.o,
-      source: 'polygon',
-      cachedAt: new Date().toISOString(),
-    }
-
-    await setCachedQuote(cacheKey, data)
-
-    console.log(`Successfully fetched from Polygon.io: ${normalizedSymbol}`)
+    console.log(`Successfully fetched from Alpaca: ${normalizedSymbol}`)
     return new Response(
-      JSON.stringify(data),
+      JSON.stringify(alpacaQuote),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
 
