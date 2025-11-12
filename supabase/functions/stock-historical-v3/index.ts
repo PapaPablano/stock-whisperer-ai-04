@@ -1,33 +1,26 @@
 import { createClient } from '@supabase/supabase-js'
-import Alpaca from '@alpacahq/alpaca-trade-api'
-import { type Bar } from '@alpacahq/alpaca-trade-api/dist/resources/datav2/entityv2.js'
+// We are removing the Alpaca SDK and using native fetch instead.
+// import Alpaca from '@alpacahq/alpaca-trade-api'
+// import { type Bar } from '@alpacahq/alpaca-trade-api/dist/resources/datav2/entityv2.js'
 import { SMA, EMA, RSI } from 'technicalindicators'
+
+// Define the Bar type manually, matching the Alpaca API v2 response
+interface Bar {
+  t: string;  // Timestamp
+  o: number;  // OpenPrice
+  h: number;  // HighPrice
+  l: number;  // LowPrice
+  c: number;  // ClosePrice
+  v: number;  // Volume
+  n: number;  // TradeCount
+  vw: number; // VWAP
+}
+
 
 const supabaseAdmin = createClient(
   Deno.env.get('SUPABASE_URL') ?? '',
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
 )
-
-const createDefaultAlpacaClient = () => {
-  const keyId = Deno.env.get('ALPACA_KEY_ID')
-  const secretKey = Deno.env.get('ALPACA_SECRET_KEY')
-
-  if (!keyId || !secretKey) {
-    throw new Error('Missing Alpaca credentials in environment variables')
-  }
-
-  console.log('Alpaca keys:', Deno.env.get('ALPACA_KEY_ID') ? 'present' : 'missing', Deno.env.get('ALPACA_SECRET_KEY') ? 'present' : 'missing');
-  console.log('Alpaca module keys:', Object.keys(Alpaca || {}));
-  console.log('Alpaca module inspect:', JSON.stringify(Object.getOwnPropertyNames(Alpaca || {})));
-
-  // The Alpaca library is a CJS module, so we need to access the default export when using it in Deno's ESM environment.
-  const AlpacaConstructor = (Alpaca as any).default || Alpaca;
-  return new AlpacaConstructor({
-    keyId,
-    secretKey,
-    paper: (Deno.env.get('ALPACA_PAPER_TRADING') ?? 'true').toLowerCase() === 'true',
-  })
-}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -44,33 +37,37 @@ const getDateRange = (range: string) => {
 
   switch(range) {
     case '1d':
-      startDate.setDate(endDate.getDate() - 1)
+      startDate.setDate(endDate.getDate() - 2); // Go back a bit more to be safe
       break
     case '5d':
-      startDate.setDate(endDate.getDate() - 5)
+      startDate.setDate(endDate.getDate() - 7);
       break
     case '1mo':
-      startDate.setMonth(endDate.getMonth() - 1)
+      startDate.setMonth(endDate.getMonth() - 1);
       break
     case '3mo':
-      startDate.setMonth(endDate.getMonth() - 3)
+      startDate.setMonth(endDate.getMonth() - 3);
       break
     case '6mo':
-      startDate.setMonth(endDate.getMonth() - 6)
+      startDate.setMonth(endDate.getMonth() - 6);
       break
     case '1y':
-      startDate.setFullYear(endDate.getFullYear() - 1)
+      startDate.setFullYear(endDate.getFullYear() - 1);
       break
     case '5y':
-      startDate.setFullYear(endDate.getFullYear() - 5)
+      startDate.setFullYear(endDate.getFullYear() - 5);
       break
     default:
-      startDate.setMonth(endDate.getMonth() - 1)
+      startDate.setMonth(endDate.getMonth() - 1);
   }
 
+  // Alpaca API requires RFC3339 format (a full ISO 8601 string)
+  // We set the time to the beginning of the day for the start date.
+  startDate.setUTCHours(0, 0, 0, 0);
+
   return {
-    fromDate: startDate.toISOString().split('T')[0],
-    toDate: endDate.toISOString().split('T')[0],
+    fromDate: startDate.toISOString(),
+    toDate: endDate.toISOString(),
   }
 }
 
@@ -130,54 +127,59 @@ const setCachedPayload = async (cacheKey: string, payload: CachePayload) => {
 const STOCK_FEED = (Deno.env.get('ALPACA_STOCK_FEED') ?? 'iex').toLowerCase() === 'sip' ? 'sip' : 'iex'
 const MAX_DAILY_BARS = 10_000
 
-let sharedAlpacaClient: Alpaca | null = null
-
-const getAlpacaClient = (): Alpaca => {
-  if (!sharedAlpacaClient) {
-    sharedAlpacaClient = createDefaultAlpacaClient()
-  }
-  return sharedAlpacaClient
-}
-
 const fetchAlpacaDailyBars = async (params: {
   symbol: string
-  startDate: Date
-  endDate: Date
+  startDate: string
+  endDate: string
 }): Promise<Bar[]> => {
   const { symbol, startDate, endDate } = params
-  const client = getAlpacaClient()
+  const keyId = Deno.env.get('ALPACA_KEY_ID')
+  const secretKey = Deno.env.get('ALPACA_SECRET_KEY')
 
-  const barsGen = client.getBars({
-    symbol,
-    timeframe: '1Day',
-    start: startDate.toISOString(),
-    end: endDate.toISOString(),
-    limit: MAX_DAILY_BARS,
-    feed: STOCK_FEED,
-    sort: 'asc',
-  })
-
-  const bars: Bar[] = []
-  for await (const bar of barsGen) {
-    bars.push(bar as unknown as Bar)
+  if (!keyId || !secretKey) {
+    throw new Error('Missing Alpaca credentials in environment variables')
   }
-  return bars
+
+  const url = new URL('https://data.alpaca.markets/v2/stocks/bars');
+  url.searchParams.set('symbols', symbol);
+  url.searchParams.set('timeframe', '1Day');
+  url.searchParams.set('start', startDate);
+  url.searchParams.set('end', endDate);
+  url.searchParams.set('limit', String(MAX_DAILY_BARS));
+  url.searchParams.set('feed', STOCK_FEED);
+  url.searchParams.set('sort', 'asc');
+
+  const response = await fetch(url, {
+    headers: {
+      'APCA-API-KEY-ID': keyId,
+      'APCA-API-SECRET-KEY': secretKey,
+    },
+  });
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    // Include the URL in the error for better debugging
+    throw new Error(`Alpaca API request failed with status ${response.status} on URL ${url.toString()}: ${errorBody}`);
+  }
+
+  const data = await response.json();
+  return data.bars[symbol] || [];
 }
 
 const barsToHistoricalPoints = (bars: Bar[]): HistoricalPoint[] =>
   bars.map<HistoricalPoint>((bar) => ({
-    date: new Date(bar.Timestamp).toISOString().split('T')[0],
-    open: bar.OpenPrice ?? null,
-    high: bar.HighPrice ?? null,
-    low: bar.LowPrice ?? null,
-    close: bar.ClosePrice ?? null,
-    volume: bar.Volume ?? null,
+    date: new Date(bar.t).toISOString().split('T')[0],
+    open: bar.o ?? null,
+    high: bar.h ?? null,
+    low: bar.l ?? null,
+    close: bar.c ?? null,
+    volume: bar.v ?? null,
   }))
 
 const saveTrainingData = async (symbol: string, bars: Bar[]) => {
   if (bars.length === 0) return;
 
-  const closePrices = bars.map(b => b.ClosePrice as number).filter(p => p !== null);
+  const closePrices = bars.map(b => b.c as number).filter(p => p !== null);
 
   if (closePrices.length < 200) {
     console.log(`Not enough data for ${symbol} to calculate all indicators (need 200, got ${closePrices.length}). Skipping ML data ingestion.`);
@@ -208,12 +210,12 @@ const saveTrainingData = async (symbol: string, bars: Bar[]) => {
 
     dataToInsert.push({
       symbol: symbol.toUpperCase(),
-      date: new Date(bar.Timestamp).toISOString().split('T')[0],
-      open: bar.OpenPrice,
-      high: bar.HighPrice,
-      low: bar.LowPrice,
-      close: bar.ClosePrice,
-      volume: bar.Volume,
+      date: new Date(bar.t).toISOString().split('T')[0],
+      open: bar.o,
+      high: bar.h,
+      low: bar.l,
+      close: bar.c,
+      volume: bar.v,
       sma20: sma20Index >= 0 ? sma20[sma20Index] : null,
       sma50: sma50Index >= 0 ? sma50[sma50Index] : null,
       sma200: sma200Index >= 0 ? sma200[sma200Index] : null,
@@ -235,6 +237,9 @@ const saveTrainingData = async (symbol: string, bars: Bar[]) => {
     }
   }
 };
+
+
+
 
 
 Deno.serve(async (req) => {
@@ -269,13 +274,11 @@ Deno.serve(async (req) => {
     }
 
     const { fromDate, toDate } = getDateRange(range)
-    const startDate = new Date(`${fromDate}T00:00:00Z`)
-    const endDate = new Date(`${toDate}T23:59:59Z`)
 
     const dailyBars = await fetchAlpacaDailyBars({
       symbol,
-      startDate,
-      endDate,
+      startDate: fromDate,
+      endDate: toDate,
     })
 
     if (!dailyBars.length) {
@@ -304,8 +307,14 @@ Deno.serve(async (req) => {
   } catch (error) {
     console.error('Alpaca historical fetch failed', error)
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
+    // Also include the stack trace in the response for better debugging
+    const errorStack = error instanceof Error ? error.stack : 'No stack trace available'
     return new Response(
-      JSON.stringify({ error: errorMessage }),
+      JSON.stringify({ 
+        error: 'Function failed during execution.',
+        details: errorMessage,
+        stack: errorStack,
+      }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     )
   }

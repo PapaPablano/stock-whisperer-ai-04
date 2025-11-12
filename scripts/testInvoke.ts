@@ -28,6 +28,20 @@ const supabase = createClient(url, key);
 
   if (error) {
     console.error('Error invoking function:', error);
+    if (error.context && typeof error.context.json === 'function') {
+      try {
+        const errorBody = await error.context.json();
+        console.error('Error response body (JSON):', JSON.stringify(errorBody, null, 2));
+      } catch (e) {
+        // if .json() fails, try .text()
+        try {
+          const errorText = await error.context.text();
+          console.error('Error response body (text):', errorText);
+        } catch (e2) {
+          console.error('Failed to read detailed error response body.');
+        }
+      }
+    }
   } else {
     console.log('Function returned data:');
     console.log(JSON.stringify(data, null, 2));
