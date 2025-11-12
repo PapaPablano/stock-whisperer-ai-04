@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { createClient } from '@supabase/supabase-js';
 
 const url = process.env.VITE_SUPABASE_URL;
@@ -10,10 +11,25 @@ if (!url || !key) {
 const supabase = createClient(url, key);
 
 (async () => {
-  const { data, error } = await supabase.functions.invoke('stock-historical', {
-    body: { symbol: 'CRWD', range: '1y' },
+  const functionName = process.argv[2];
+  const payload = process.argv[3] ? JSON.parse(process.argv[3]) : {};
+
+  if (!functionName) {
+    console.error('Error: Function name not provided.');
+    console.log('Usage: npx tsx scripts/testInvoke.ts <function-name> [json-payload]');
+    process.exit(1);
+  }
+
+  console.log(`Invoking function "${functionName}" with payload:`, payload);
+
+  const { data, error } = await supabase.functions.invoke(functionName, {
+    body: payload,
   });
 
-  console.log('error', error);
-  console.log('data length', data?.data?.length, 'source', data?.source);
+  if (error) {
+    console.error('Error invoking function:', error);
+  } else {
+    console.log('Function returned data:');
+    console.log(JSON.stringify(data, null, 2));
+  }
 })();

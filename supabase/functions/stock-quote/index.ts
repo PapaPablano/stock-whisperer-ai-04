@@ -1,8 +1,25 @@
-import { supabaseAdmin } from '../_shared/supabaseAdminClient.ts'
-import {
-  createDefaultAlpacaClient,
-  type AlpacaRestClient,
-} from '../_shared/alpaca/client.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.43.4'
+import Alpaca from 'https://esm.sh/@alpacahq/alpaca-trade-api@3.1.2'
+
+const supabaseAdmin = createClient(
+  Deno.env.get('PROJECT_SUPABASE_URL') ?? '',
+  Deno.env.get('PROJECT_SUPABASE_SERVICE_ROLE_KEY') ?? '',
+)
+
+const createDefaultAlpacaClient = () => {
+  const keyId = Deno.env.get('APCA_API_KEY_ID')
+  const secretKey = Deno.env.get('APCA_API_SECRET_KEY')
+
+  if (!keyId || !secretKey) {
+    throw new Error('Missing Alpaca credentials in environment variables')
+  }
+
+  return new Alpaca({
+    keyId,
+    secretKey,
+    paper: (Deno.env.get('ALPACA_PAPER_TRADING') ?? 'true').toLowerCase() === 'true',
+  })
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -82,9 +99,9 @@ type QuotePayload = {
 
 const STOCK_FEED = (Deno.env.get('ALPACA_STOCK_FEED') ?? 'iex').toLowerCase() === 'sip' ? 'sip' : 'iex'
 
-let sharedAlpacaClient: AlpacaRestClient | null = null
+let sharedAlpacaClient: Alpaca | null = null
 
-const getAlpacaClient = (): AlpacaRestClient => {
+const getAlpacaClient = (): Alpaca => {
   if (!sharedAlpacaClient) {
     sharedAlpacaClient = createDefaultAlpacaClient()
   }

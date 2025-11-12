@@ -9,7 +9,7 @@ This application uses **Alpaca Market Data API** as the primary data source for 
 ### Current Capabilities
 
 ✅ **Real-time Stock Quotes** - Latest bid/ask spreads and trade data  
-✅ **Historical OHLCV Data** - Up to 2 years of intraday bars (1min to 1day intervals)  
+✅ **Historical OHLCV Data** - Up to 10+ years of daily bars and up to 2 years of intraday bars (1min to 1day intervals)  
 ✅ **Intraday Data** - Real-time minute, hourly, and daily aggregates  
 ✅ **Stock Search** - Search and discover ticker symbols  
 ✅ **WebSocket Streaming** - Real-time trade, quote, and bar updates  
@@ -399,6 +399,27 @@ historical:{SYMBOL}:{RANGE}
 ```
 
 ## Troubleshooting
+
+A local test script is available to invoke any Edge Function directly from your terminal. This is the fastest way to check if credentials are working and to inspect the raw data returned from the API.
+
+**Prerequisites**:
+- Ensure `npx` and `tsx` are available in your environment.
+- Your `.env` file must contain the correct `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
+
+**Usage**:
+```bash
+npx tsx scripts/testInvoke.ts <function-name> '[json-payload]'
+```
+
+**Example: Test `stock-quote` for AAPL**
+```bash
+npx tsx scripts/testInvoke.ts stock-quote '{"symbol": "AAPL"}'
+```
+
+**Example: Test `stock-historical` for GOOG**
+```bash
+npx tsx scripts/testInvoke.ts stock-historical '{"symbol": "GOOG", "range": "5y"}'
+```
 
 ### Issue: "Missing Alpaca credentials"
 

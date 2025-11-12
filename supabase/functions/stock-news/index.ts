@@ -1,8 +1,25 @@
-import { supabaseAdmin } from '../_shared/supabaseAdminClient.ts'
-import {
-  createDefaultAlpacaClient,
-  type AlpacaRestClient,
-} from '../_shared/alpaca/client.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.43.4'
+import Alpaca from 'https://esm.sh/@alpacahq/alpaca-trade-api@3.1.2'
+
+const supabaseAdmin = createClient(
+  Deno.env.get('PROJECT_SUPABASE_URL') ?? '',
+  Deno.env.get('PROJECT_SUPABASE_SERVICE_ROLE_KEY') ?? '',
+)
+
+const createDefaultAlpacaClient = () => {
+  const keyId = Deno.env.get('APCA_API_KEY_ID')
+  const secretKey = Deno.env.get('APCA_API_SECRET_KEY')
+
+  if (!keyId || !secretKey) {
+    throw new Error('Missing Alpaca credentials in environment variables')
+  }
+
+  return new Alpaca({
+    keyId,
+    secretKey,
+    paper: (Deno.env.get('ALPACA_PAPER_TRADING') ?? 'true').toLowerCase() === 'true',
+  })
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -92,9 +109,9 @@ const writeCache = async (key: string, payload: CachePayload) => {
   }
 }
 
-let sharedAlpacaClient: AlpacaRestClient | null = null
+let sharedAlpacaClient: Alpaca | null = null
 
-const getAlpacaClient = (): AlpacaRestClient => {
+const getAlpacaClient = (): Alpaca => {
   if (!sharedAlpacaClient) {
     sharedAlpacaClient = createDefaultAlpacaClient()
   }
@@ -102,7 +119,7 @@ const getAlpacaClient = (): AlpacaRestClient => {
 }
 
 const fetchAlpacaNews = async (params: {
-  client: AlpacaRestClient
+  client: Alpaca
   symbols?: string
   start?: string
   end?: string
@@ -124,33 +141,18 @@ const fetchAlpacaNews = async (params: {
     pageToken,
   } = params
 
-  // Build the news URL
-  const url = new URL('/v1beta1/news', 'https://data.alpaca.markets')
+  const response = await client.getNews({
+    symbols: symbols ? symbols.split(',') : undefined,
+    start,
+    end,
+    limit,
+    sort,
+    include_content: includeContent,
+    exclude_contentless: excludeContentless,
+    page_token: pageToken,
+  })
   
-  if (symbols) {
-    url.searchParams.set('symbols', symbols)
-  }
-  if (start) {
-    url.searchParams.set('start', start)
-  }
-  if (end) {
-    url.searchParams.set('end', end)
-  }
-  url.searchParams.set('limit', String(limit))
-  url.searchParams.set('sort', sort)
-  if (includeContent) {
-    url.searchParams.set('include_content', 'true')
-  }
-  if (excludeContentless) {
-    url.searchParams.set('exclude_contentless', 'true')
-  }
-  if (pageToken) {
-    url.searchParams.set('page_token', pageToken)
-  }
-
-  // Use the private request method by accessing it
-  const response = await (client as unknown as { request: <T>(url: URL) => Promise<T> }).request<AlpacaNewsResponse>(url)
-  return response
+  return response as AlpacaNewsResponse
 }
 
 Deno.serve(async (req) => {

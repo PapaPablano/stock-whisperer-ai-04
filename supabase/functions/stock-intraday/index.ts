@@ -1,9 +1,26 @@
-import { supabaseAdmin } from '../_shared/supabaseAdminClient.ts'
-import {
-  createDefaultAlpacaClient,
-  type AlpacaRestClient,
-  type AlpacaBar,
-} from '../_shared/alpaca/client.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.43.4'
+import Alpaca from 'https://esm.sh/@alpacahq/alpaca-trade-api@3.1.2'
+import { type Bar } from 'https://esm.sh/@alpacahq/alpaca-trade-api@3.1.2/dist/resources/datav2/entityv2.js'
+
+const supabaseAdmin = createClient(
+  Deno.env.get('PROJECT_SUPABASE_URL') ?? '',
+  Deno.env.get('PROJECT_SUPABASE_SERVICE_ROLE_KEY') ?? '',
+)
+
+const createDefaultAlpacaClient = () => {
+  const keyId = Deno.env.get('APCA_API_KEY_ID')
+  const secretKey = Deno.env.get('APCA_API_SECRET_KEY')
+
+  if (!keyId || !secretKey) {
+    throw new Error('Missing Alpaca credentials in environment variables')
+  }
+
+  return new Alpaca({
+    keyId,
+    secretKey,
+    paper: (Deno.env.get('ALPACA_PAPER_TRADING') ?? 'true').toLowerCase() === 'true',
+  })
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -131,13 +148,13 @@ type NormalizedBar = {
   volume: number;
 }
 
-const toNormalizedBar = (bar: AlpacaBar): NormalizedBar => ({
-  timestamp: Date.parse(bar.t),
-  open: bar.o,
-  high: bar.h,
-  low: bar.l,
-  close: bar.c,
-  volume: bar.v,
+const toNormalizedBar = (bar: Bar): NormalizedBar => ({
+  timestamp: new Date(bar.Timestamp).getTime(),
+  open: bar.OpenPrice,
+  high: bar.HighPrice,
+  low: bar.LowPrice,
+  close: bar.ClosePrice,
+  volume: bar.Volume,
 })
 
 const aggregateNormalizedBars = (bars: NormalizedBar[], intervalMinutes: number): NormalizedBar[] => {
@@ -210,56 +227,6 @@ const computeRangeStart = (range: string, endDate: Date): Date => {
   }
 }
 
-const fetchAlpacaBars = async (params: {
-  client: AlpacaRestClient
-  symbol: string
-  interval: string
-  range: string
-}): Promise<{ bars: NormalizedBar[]; baseInterval: string }> => {
-  const { client, symbol, interval, range } = params
-  const plan = getFetchPlan(interval)
-  const end = new Date()
-  const start = computeRangeStart(range, end)
-  const startIso = start.toISOString()
-  const endIso = end.toISOString()
-  const collected: NormalizedBar[] = []
-  let pageToken: string | undefined
-
-  while (true) {
-    const response = await client.getBars({
-      symbol,
-      timeframe: plan.timeframe,
-      start: startIso,
-      end: endIso,
-      limit: PAGE_LIMIT,
-      sort: 'asc',
-      adjustment: 'split',
-      feed: STOCK_FEED,
-      pageToken,
-    })
-
-    for (const bar of response.bars) {
-      const normalized = toNormalizedBar(bar)
-      if (Number.isNaN(normalized.timestamp)) continue
-      if (normalized.timestamp < start.getTime()) continue
-      collected.push(normalized)
-      if (collected.length >= MAX_TOTAL_BARS) break
-    }
-
-    if (!response.next_page_token || collected.length >= MAX_TOTAL_BARS) {
-      break
-    }
-    pageToken = response.next_page_token
-  }
-
-  const minutes = INTERVAL_MINUTES.get(plan.resultInterval) ?? 1
-  const bars = plan.requiresAggregation
-    ? aggregateNormalizedBars(collected, minutes)
-    : collected
-
-  return { bars, baseInterval: plan.resultInterval }
-}
-
 const mapBarsToIntradayPoints = (bars: NormalizedBar[]): IntradayPoint[] =>
   bars.map((bar) => {
     const iso = new Date(bar.timestamp).toISOString()
@@ -275,14 +242,50 @@ const mapBarsToIntradayPoints = (bars: NormalizedBar[]): IntradayPoint[] =>
     }
   })
 
-let sharedAlpacaClient: AlpacaRestClient | null = null
+let sharedAlpacaClient: Alpaca | null = null
 
-const getAlpacaClient = (): AlpacaRestClient => {
+const getAlpacaClient = (): Alpaca => {
   if (!sharedAlpacaClient) {
     sharedAlpacaClient = createDefaultAlpacaClient()
   }
   return sharedAlpacaClient
 }
+
+const fetchAlpacaBars = async (params: {
+  symbol: string
+  interval: string
+  range: string
+}): Promise<{ bars: NormalizedBar[]; baseInterval: string }> => {
+  const { symbol, interval, range } = params
+  const plan = getFetchPlan(interval)
+  const end = new Date()
+  const start = computeRangeStart(range, end)
+
+  const alpaca = getAlpacaClient()
+
+  const barsGen = alpaca.getBars({
+    symbol,
+    timeframe: plan.timeframe,
+    start: start.toISOString(),
+    end: end.toISOString(),
+    limit: PAGE_LIMIT,
+    feed: STOCK_FEED,
+    sort: 'asc',
+  })
+
+  const collected: NormalizedBar[] = []
+  for await (const bar of barsGen) {
+    collected.push(toNormalizedBar(bar as unknown as Bar))
+  }
+
+  const minutes = INTERVAL_MINUTES.get(plan.resultInterval) ?? 1
+  const finalBars = plan.requiresAggregation
+    ? aggregateNormalizedBars(collected, minutes)
+    : collected
+
+  return { bars: finalBars, baseInterval: plan.resultInterval }
+}
+
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -318,7 +321,7 @@ Deno.serve(async (req) => {
 
     const cached = await readCache(cacheKey)
     if (cached) {
-      console.log(`Serving Alpaca intraday cache hit for ${symbol} ${plan.resultInterval} ${range}`)
+      console.log(`Serving Alpaca API intraday cache hit for ${symbol} ${plan.resultInterval} ${range}`)
       return new Response(
         JSON.stringify({
           data: cached.data,
@@ -332,9 +335,7 @@ Deno.serve(async (req) => {
       )
     }
 
-    const client = getAlpacaClient()
     const { bars, baseInterval } = await fetchAlpacaBars({
-      client,
       symbol,
       interval: intervalInput,
       range,
@@ -348,7 +349,7 @@ Deno.serve(async (req) => {
     }
 
     const intradayData = mapBarsToIntradayPoints(bars)
-    console.log(`Alpaca returned ${intradayData.length} intraday points for ${symbol}`)
+    console.log(`Alpaca API returned ${intradayData.length} intraday points for ${symbol}`)
 
     const payload: CachePayload = {
       data: intradayData,
@@ -371,7 +372,7 @@ Deno.serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     )
   } catch (error) {
-    console.error('Error fetching Alpaca intraday data:', error)
+    console.error('Error fetching Alpaca API intraday data:', error)
     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
     return new Response(
       JSON.stringify({ error: errorMessage }),

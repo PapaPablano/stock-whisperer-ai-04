@@ -1,9 +1,23 @@
-import { connectEquitiesStream } from '../_shared/alpaca/stream.ts'
-import { resolveAlpacaCredentials } from '../_shared/alpaca/client.ts'
+import { Alpaca } from 'https://esm.sh/@alpacahq/alpaca-trade-api@3.1.2'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-application-name',
+}
+
+const resolveAlpacaCredentials = () => {
+  const keyId = Deno.env.get('APCA_API_KEY_ID')
+  const secretKey = Deno.env.get('APCA_API_SECRET_KEY')
+
+  if (!keyId || !secretKey) {
+    throw new Error('Missing Alpaca credentials in environment variables')
+  }
+
+  return new Alpaca({
+    keyId,
+    secretKey,
+    paper: (Deno.env.get('ALPACA_PAPER_TRADING') ?? 'true').toLowerCase() === 'true',
+  })
 }
 
 /**
@@ -53,7 +67,10 @@ Deno.serve(async (req) => {
 
         // Helper to send SSE message
         const sendEvent = (event: string, data: unknown) => {
-          const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
+          const message = `event: ${event}
+data: ${JSON.stringify(data)}
+
+`
           controller.enqueue(encoder.encode(message))
         }
 
@@ -71,93 +88,63 @@ Deno.serve(async (req) => {
 
           console.log('Connecting to Alpaca stream with symbols:', symbols)
 
+          const alpaca = resolveAlpacaCredentials()
           // Connect to Alpaca WebSocket
-          const socket = await connectEquitiesStream({
-            credentials: resolveAlpacaCredentials(),
-            symbols: subscription,
-            onOpen: () => {
-              console.log('Connected to Alpaca stream')
-              sendEvent('connected', { 
-                message: 'Connected to real-time data stream',
-                symbols,
-                subscriptions: {
-                  trades: subscribeTrades,
-                  quotes: subscribeQuotes,
-                  bars: subscribeBars,
-                }
-              })
-            },
-            onMessage: (data: unknown) => {
-              // Forward Alpaca messages to client
-              // Alpaca sends arrays of messages
-              if (Array.isArray(data)) {
-                for (const item of data) {
-                  if (item.T === 't') {
-                    // Trade update
-                    sendEvent('trade', {
-                      symbol: item.S,
-                      price: item.p,
-                      size: item.s,
-                      timestamp: item.t,
-                      conditions: item.c,
-                      exchange: item.x,
-                    })
-                  } else if (item.T === 'q') {
-                    // Quote update
-                    sendEvent('quote', {
-                      symbol: item.S,
-                      bidPrice: item.bp,
-                      bidSize: item.bs,
-                      askPrice: item.ap,
-                      askSize: item.as,
-                      timestamp: item.t,
-                      conditions: item.c,
-                    })
-                  } else if (item.T === 'b') {
-                    // Bar update
-                    sendEvent('bar', {
-                      symbol: item.S,
-                      open: item.o,
-                      high: item.h,
-                      low: item.l,
-                      close: item.c,
-                      volume: item.v,
-                      timestamp: item.t,
-                      tradeCount: item.n,
-                      vwap: item.vw,
-                    })
-                  } else if (item.T === 'success' || item.T === 'subscription') {
-                    // Status messages
-                    sendEvent('status', item)
-                  }
-                }
-              } else {
-                // Single message
-                sendEvent('message', data)
+          const socket = alpaca.data_stream_v2
+          
+          socket.onConnect(() => {
+            console.log('Connected to Alpaca stream')
+            sendEvent('connected', { 
+              message: 'Connected to real-time data stream',
+              symbols,
+              subscriptions: {
+                trades: subscribeTrades,
+                quotes: subscribeQuotes,
+                bars: subscribeBars,
               }
-            },
-            onError: (event) => {
-              console.error('Alpaca stream error:', event)
-              sendEvent('error', { 
-                message: 'Stream error occurred',
-                error: event instanceof ErrorEvent ? event.message : 'Unknown error'
-              })
-            },
-            onClose: (event) => {
-              console.log('Alpaca stream closed:', event.code, event.reason)
-              sendEvent('closed', { 
-                message: 'Stream closed',
-                code: event.code,
-                reason: event.reason
-              })
-              controller.close()
-            },
+            })
+            socket.subscribe(subscription)
           })
+
+          socket.onStateChange((state) => {
+            console.log(`Alpaca stream state changed: ${state}`)
+          })
+
+          socket.onDisconnect(() => {
+            console.log('Disconnected from Alpaca stream')
+          })
+
+          socket.onError((err) => {
+            console.error('Alpaca stream error:', err)
+            sendEvent('error', { 
+              message: 'Stream error occurred',
+              error: err.message
+            })
+          })
+
+          socket.onStockTrade((trade) => {
+            sendEvent('trade', trade)
+          })
+
+          socket.onStockQuote((quote) => {
+            sendEvent('quote', quote)
+          })
+
+          socket.onStockBar((bar) => {
+            sendEvent('bar', bar)
+          })
+
+          socket.onSubscription((sub) => {
+            sendEvent('status', sub)
+          })
+
+          socket.connect()
+
 
           // Handle client disconnect
           req.signal.addEventListener('abort', () => {
             console.log('Client disconnected, closing Alpaca stream')
-            socket.close()
+            socket.disconnect()
             controller.close()
           })
 

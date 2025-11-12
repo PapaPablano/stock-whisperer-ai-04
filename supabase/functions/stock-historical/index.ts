@@ -1,9 +1,26 @@
-import { supabaseAdmin } from '../_shared/supabaseAdminClient.ts'
-import {
-  createDefaultAlpacaClient,
-  type AlpacaRestClient,
-  type AlpacaBar,
-} from '../_shared/alpaca/client.ts'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.43.4'
+import Alpaca from 'https://esm.sh/@alpacahq/alpaca-trade-api@3.1.2'
+import { type Bar } from 'https://esm.sh/@alpacahq/alpaca-trade-api@3.1.2/dist/resources/datav2/entityv2.js'
+
+const supabaseAdmin = createClient(
+  Deno.env.get('PROJECT_SUPABASE_URL') ?? '',
+  Deno.env.get('PROJECT_SUPABASE_SERVICE_ROLE_KEY') ?? '',
+)
+
+const createDefaultAlpacaClient = () => {
+  const keyId = Deno.env.get('APCA_API_KEY_ID')
+  const secretKey = Deno.env.get('APCA_API_SECRET_KEY')
+
+  if (!keyId || !secretKey) {
+    throw new Error('Missing Alpaca credentials in environment variables')
+  }
+
+  return new Alpaca({
+    keyId,
+    secretKey,
+    paper: (Deno.env.get('ALPACA_PAPER_TRADING') ?? 'true').toLowerCase() === 'true',
+  })
+}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -104,136 +121,54 @@ const setCachedPayload = async (cacheKey: string, payload: CachePayload) => {
 }
 
 const STOCK_FEED = (Deno.env.get('ALPACA_STOCK_FEED') ?? 'iex').toLowerCase() === 'sip' ? 'sip' : 'iex'
-const DAILY_PAGE_LIMIT = 1_000
+const DAILY_PAGE_LIMIT = 10_000
 const MAX_DAILY_BARS = 10_000
-const INTRADAY_CACHE_PREFIX = 'intraday'
 
-const fetchAlpacaDailyBars = async (params: {
-  client: AlpacaRestClient
-  symbol: string
-  startIso: string
-  endIso: string
-}): Promise<AlpacaBar[]> => {
-  const { client, symbol, startIso, endIso } = params
-  const collected: AlpacaBar[] = []
-  let pageToken: string | undefined
+let sharedAlpacaClient: Alpaca | null = null
 
-  while (true) {
-    const response = await client.getBars({
-      symbol,
-      timeframe: '1Day',
-      start: startIso,
-      end: endIso,
-      limit: DAILY_PAGE_LIMIT,
-      sort: 'asc',
-      adjustment: 'split',
-      feed: STOCK_FEED,
-      pageToken,
-    })
-
-    collected.push(...response.bars)
-
-    if (!response.next_page_token || collected.length >= MAX_DAILY_BARS) {
-      break
-    }
-    pageToken = response.next_page_token
-  }
-
-  return collected
-}
-
-const barsToHistoricalPoints = (bars: AlpacaBar[]): HistoricalPoint[] =>
-  bars.map<HistoricalPoint>((bar) => ({
-    date: bar.t.split('T')[0] ?? '',
-    open: bar.o ?? null,
-    high: bar.h ?? null,
-    low: bar.l ?? null,
-    close: bar.c ?? null,
-    volume: bar.v ?? null,
-  }))
-
-type IntradayCachePayload = {
-  data?: Array<{
-    datetime?: string
-    date?: string
-    open?: number | null
-    high?: number | null
-    low?: number | null
-    close?: number | null
-    volume?: number | null
-  }>
-}
-
-const readIntradaySnapshot = async (symbol: string): Promise<HistoricalPoint | null> => {
-  const intradayKey = `${INTRADAY_CACHE_PREFIX}:${symbol}:1m:1d`
-  try {
-    const { data, error } = await supabaseAdmin
-      .from('stock_cache')
-      .select('data, last_updated')
-      .eq('cache_key', intradayKey)
-      .maybeSingle()
-
-    if (error || !data?.data) {
-      return null
-    }
-
-    const payload = data.data as IntradayCachePayload
-    const points = payload.data ?? []
-    if (!points.length) {
-      return null
-    }
-
-    const sorted = points
-      .filter((point) => typeof point.datetime === 'string')
-      .sort((a, b) => {
-        const at = Date.parse(a.datetime ?? '')
-        const bt = Date.parse(b.datetime ?? '')
-        return at - bt
-      })
-
-    if (!sorted.length) {
-      return null
-    }
-
-    const first = sorted.find((p) => typeof p.open === 'number')
-    const last = [...sorted].reverse().find((p) => typeof p.close === 'number')
-    const highs = sorted.map((p) => (typeof p.high === 'number' ? p.high : null)).filter((v): v is number => v !== null)
-    const lows = sorted.map((p) => (typeof p.low === 'number' ? p.low : null)).filter((v): v is number => v !== null)
-    const volumes = sorted.map((p) => (typeof p.volume === 'number' ? p.volume : 0))
-
-    const iso = sorted[0]?.datetime ?? new Date().toISOString()
-    const date = sorted[0]?.date ?? iso.split('T')[0]
-
-    return {
-      date,
-      open: first?.open ?? null,
-      high: highs.length ? Math.max(...highs) : null,
-      low: lows.length ? Math.min(...lows) : null,
-      close: last?.close ?? first?.open ?? null,
-      volume: volumes.reduce((sum, value) => sum + value, 0),
-    }
-  } catch (error) {
-    console.error('Intraday overlay fetch failed', error)
-    return null
-  }
-}
-
-const mergeHistoricalWithSnapshot = (historical: HistoricalPoint[], snapshot: HistoricalPoint | null): HistoricalPoint[] => {
-  if (!snapshot) {
-    return historical
-  }
-  const filtered = historical.filter((item) => item.date !== snapshot.date)
-  return [...filtered, snapshot].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-}
-
-let sharedAlpacaClient: AlpacaRestClient | null = null
-
-const getAlpacaClient = (): AlpacaRestClient => {
+const getAlpacaClient = (): Alpaca => {
   if (!sharedAlpacaClient) {
     sharedAlpacaClient = createDefaultAlpacaClient()
   }
   return sharedAlpacaClient
 }
+
+const fetchAlpacaDailyBars = async (params: {
+  symbol: string
+  startDate: Date
+  endDate: Date
+}): Promise<Bar[]> => {
+  const { symbol, startDate, endDate } = params
+  const client = getAlpacaClient()
+
+  const barsGen = client.getBars({
+    symbol,
+    timeframe: '1Day',
+    start: startDate.toISOString(),
+    end: endDate.toISOString(),
+    limit: MAX_DAILY_BARS,
+    feed: STOCK_FEED,
+    sort: 'asc',
+  })
+
+  const bars: Bar[] = []
+  for await (const bar of barsGen) {
+    bars.push(bar as unknown as Bar)
+  }
+  return bars
+}
+
+const barsToHistoricalPoints = (bars: Bar[]): HistoricalPoint[] =>
+  bars.map<HistoricalPoint>((bar) => ({
+    date: new Date(bar.Timestamp).toISOString().split('T')[0],
+    open: bar.OpenPrice ?? null,
+    high: bar.HighPrice ?? null,
+    low: bar.LowPrice ?? null,
+    close: bar.ClosePrice ?? null,
+    volume: bar.Volume ?? null,
+  }))
+
+
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -267,15 +202,13 @@ Deno.serve(async (req) => {
     }
 
     const { fromDate, toDate } = getDateRange(range)
-    const startIso = `${fromDate}T00:00:00Z`
-    const endIso = `${toDate}T23:59:59Z`
+    const startDate = new Date(`${fromDate}T00:00:00Z`)
+    const endDate = new Date(`${toDate}T23:59:59Z`)
 
-    const client = getAlpacaClient()
     const dailyBars = await fetchAlpacaDailyBars({
-      client,
       symbol,
-      startIso,
-      endIso,
+      startDate,
+      endDate,
     })
 
     if (!dailyBars.length) {
@@ -285,13 +218,8 @@ Deno.serve(async (req) => {
       )
     }
 
-    let historicalData = barsToHistoricalPoints(dailyBars)
-    const intradaySnapshot = await readIntradaySnapshot(symbol)
-    if (intradaySnapshot) {
-      historicalData = mergeHistoricalWithSnapshot(historicalData, intradaySnapshot)
-    }
-
-    const source = intradaySnapshot ? 'alpaca+intraday' : 'alpaca'
+    const historicalData = barsToHistoricalPoints(dailyBars)
+    const source = 'alpaca'
 
     await setCachedPayload(cacheKey, {
       data: historicalData,

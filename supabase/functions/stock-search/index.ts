@@ -1,7 +1,4 @@
-import {
-  createDefaultAlpacaClient,
-  type AlpacaRestClient,
-} from '../_shared/alpaca/client.ts'
+import Alpaca from 'https://esm.sh/@alpacahq/alpaca-trade-api@3.1.2'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -18,11 +15,22 @@ interface YahooSearchResponse {
   }>
 }
 
-let sharedAlpacaClient: AlpacaRestClient | null = null
+let sharedAlpacaClient: Alpaca | null = null
 
-const getAlpacaClient = (): AlpacaRestClient => {
+const getAlpacaClient = (): Alpaca => {
   if (!sharedAlpacaClient) {
-    sharedAlpacaClient = createDefaultAlpacaClient()
+    const keyId = Deno.env.get('APCA_API_KEY_ID')
+    const secretKey = Deno.env.get('APCA_API_SECRET_KEY')
+
+    if (!keyId || !secretKey) {
+      throw new Error('Missing Alpaca credentials in environment variables')
+    }
+
+    sharedAlpacaClient = new Alpaca({
+      keyId,
+      secretKey,
+      paper: (Deno.env.get('ALPACA_PAPER_TRADING') ?? 'true').toLowerCase() === 'true',
+    })
   }
   return sharedAlpacaClient
 }
