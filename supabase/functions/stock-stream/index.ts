@@ -1,23 +1,26 @@
-import { Alpaca } from '@alpacahq/alpaca-trade-api'
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
+// Define the shape of the incoming trade data from the WebSocket
+interface AlpacaTrade {
+  T: string // Message Type
+  S: string // Symbol
+  i: number // Trade ID
+  x: string // Exchange
+  p: number // Price
+  s: number // Size
+  t: string // Timestamp
+  c: string[] // Conditions
+  z: string // Tape
+}
+
+const ALPACA_KEY_ID = Deno.env.get('ALPACA_KEY_ID')!
+const ALPACA_SECRET_KEY = Deno.env.get('ALPACA_SECRET_KEY')!
+const WEBSOCKET_URL = 'wss://stream.data.alpaca.markets/v2/iex' // Using IEX for free data
+
+// CORS headers
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-application-name',
-}
-
-const resolveAlpacaCredentials = () => {
-  const keyId = Deno.env.get('APCA_API_KEY_ID')
-  const secretKey = Deno.env.get('APCA_API_SECRET_KEY')
-
-  if (!keyId || !secretKey) {
-    throw new Error('Missing Alpaca credentials in environment variables')
-  }
-
-  return new Alpaca({
-    keyId,
-    secretKey,
-    paper: (Deno.env.get('ALPACA_PAPER_TRADING') ?? 'true').toLowerCase() === 'true',
-  })
 }
 
 /**
@@ -32,7 +35,7 @@ const resolveAlpacaCredentials = () => {
  * - quotes: Whether to subscribe to quotes (default: false)
  * - bars: Whether to subscribe to bars (default: false)
  */
-Deno.serve(async (req) => {
+serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
@@ -75,79 +78,65 @@ data: ${JSON.stringify(data)}
         }
 
         try {
-          // Prepare subscription based on user preferences
-          const subscription: {
-            trades?: string[]
-            quotes?: string[]
-            bars?: string[]
-          } = {}
+          const socket = new WebSocket(WEBSOCKET_URL)
 
-          if (subscribeTrades) subscription.trades = symbols
-          if (subscribeQuotes) subscription.quotes = symbols
-          if (subscribeBars) subscription.bars = symbols
+          socket.onopen = () => {
+            console.log('WebSocket connection opened. Authenticating...')
+            // Authenticate
+            socket.send(JSON.stringify({
+              action: 'auth',
+              key: ALPACA_KEY_ID,
+              secret: ALPACA_SECRET_KEY,
+            }))
+          }
 
-          console.log('Connecting to Alpaca stream with symbols:', symbols)
-
-          const alpaca = resolveAlpacaCredentials()
-          // Connect to Alpaca WebSocket
-          const socket = alpaca.data_stream_v2
-          
-          socket.onConnect(() => {
-            console.log('Connected to Alpaca stream')
-            sendEvent('connected', { 
-              message: 'Connected to real-time data stream',
-              symbols,
-              subscriptions: {
-                trades: subscribeTrades,
-                quotes: subscribeQuotes,
-                bars: subscribeBars,
+          socket.onmessage = (event) => {
+            const messages = JSON.parse(event.data)
+            for (const msg of messages) {
+              if (msg.T === 'success' && msg.msg === 'authenticated') {
+                console.log('Authentication successful. Subscribing to trades...')
+                // Subscribe to trades for the given symbols
+                socket.send(JSON.stringify({
+                  action: 'subscribe',
+                  trades: symbols,
+                }))
+              } else if (msg.T === 't') {
+                // This is a trade message
+                const trade: AlpacaTrade = msg
+                const message = `data: ${JSON.stringify(trade)}\n\n`
+                controller.enqueue(new TextEncoder().encode(message))
+              } else {
+                console.log('Received other message:', msg)
               }
-            })
-            socket.subscribe(subscription)
-          })
+            }
+          }
 
-          socket.onStateChange((state) => {
-            console.log(`Alpaca stream state changed: ${state}`)
-          })
+          socket.onclose = () => {
+            console.log('WebSocket connection closed.')
+            try {
+              controller.close()
+            } catch (e) {
+              // Ignore if controller is already closed
+            }
+          }
 
-          socket.onDisconnect(() => {
-            console.log('Disconnected from Alpaca stream')
-          })
+          socket.onerror = (err) => {
+            console.error('WebSocket error:', err)
+            controller.error(err)
+          }
 
-          socket.onError((err) => {
-            console.error('Alpaca stream error:', err)
-            sendEvent('error', { 
-              message: 'Stream error occurred',
-              error: err.message
-            })
-          })
-
-          socket.onStockTrade((trade) => {
-            sendEvent('trade', trade)
-          })
-
-          socket.onStockQuote((quote) => {
-            sendEvent('quote', quote)
-          })
-
-          socket.onStockBar((bar) => {
-            sendEvent('bar', bar)
-          })
-
-          socket.onSubscription((sub) => {
-            sendEvent('status', sub)
-          })
-
-          socket.connect()
-
-
-          // Handle client disconnect
-          req.signal.addEventListener('abort', () => {
-            console.log('Client disconnected, closing Alpaca stream')
-            socket.disconnect()
-            controller.close()
-          })
-
+          // Clean up on client disconnect
+          req.signal.onabort = () => {
+            console.log('Client disconnected, closing WebSocket connection.')
+            if (socket.readyState === WebSocket.OPEN) {
+              socket.close()
+            }
+            try {
+              controller.close()
+            } catch (e) {
+              // Ignore if controller is already closed
+            }
+          }
         } catch (error) {
           console.error('Error setting up stream:', error)
           sendEvent('error', { 

@@ -1,5 +1,5 @@
-import { createClient } from "@supabase/supabase-js";
-import { RSI } from "technicalindicators";
+import { createClient } from '@supabase/supabase-js';
+import { RSI } from 'technicalindicators';
 
 const supabaseAdmin = createClient(
   Deno.env.get('SUPABASE_URL') ?? '',
