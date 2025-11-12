@@ -5,6 +5,7 @@ import { useStockSearch } from "@/hooks/useStockSearch";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { NavLink } from "./NavLink";
 
 interface HeaderProps {
   onSymbolSelect?: (symbol: string) => void;
@@ -47,6 +48,11 @@ export const Header = ({ onSymbolSelect }: HeaderProps) => {
           <TrendingUp className="h-6 w-6 text-primary" />
           <h1 className="text-xl font-bold text-foreground">StockML Analytics</h1>
         </div>
+
+        <nav className="flex items-center gap-4 text-sm font-medium text-muted-foreground">
+          <NavLink to="/">Dashboard</NavLink>
+          <NavLink to="/watchlists">Watchlists</NavLink>
+        </nav>
         
         <div className="flex-1 max-w-md relative">
           <div className="relative">

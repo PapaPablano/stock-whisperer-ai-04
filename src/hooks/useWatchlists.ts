@@ -1,120 +1,55 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { 
-  getUserWatchlists, 
-  createWatchlist, 
-  updateWatchlist,
-  deleteWatchlist,
-  getWatchlistItems, 
-  addToWatchlist, 
-  removeFromWatchlist 
-} from '@/lib/supabaseHelpers';
-import { Tables } from '@/integrations/supabase/types';
+import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 
-export type Watchlist = Tables<'watchlists'>;
-export type WatchlistItem = Tables<'watchlist_items'>;
-
-/**
- * Hook to fetch all user watchlists
- */
-export function useWatchlists() {
-  return useQuery({
-    queryKey: ['watchlists'],
-    queryFn: getUserWatchlists,
-  });
+export interface Watchlist {
+  id: string;
+  name: string;
+  symbols: string[];
 }
 
-/**
- * Hook to fetch items in a specific watchlist
- */
-export function useWatchlistItems(watchlistId: string | undefined) {
-  return useQuery({
-    queryKey: ['watchlist-items', watchlistId],
-    queryFn: () => getWatchlistItems(watchlistId!),
-    enabled: !!watchlistId,
-  });
+interface WatchlistState {
+  watchlists: Watchlist[];
+  createWatchlist: (name: string) => void;
+  deleteWatchlist: (id: string) => void;
+  addSymbolToWatchlist: (id: string, symbol: string) => void;
+  removeSymbolFromWatchlist: (id: string, symbol: string) => void;
 }
 
-/**
- * Hook to create a new watchlist
- */
-export function useCreateWatchlist() {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: ({ name, description }: { name: string; description?: string }) =>
-      createWatchlist(name, description),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['watchlists'] });
-    },
-  });
-}
-
-/**
- * Hook to update a watchlist
- */
-export function useUpdateWatchlist() {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: ({ 
-      watchlistId, 
-      updates 
-    }: { 
-      watchlistId: string; 
-      updates: { name?: string; description?: string } 
-    }) => updateWatchlist(watchlistId, updates),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['watchlists'] });
-    },
-  });
-}
-
-/**
- * Hook to delete a watchlist
- */
-export function useDeleteWatchlist() {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: (watchlistId: string) => deleteWatchlist(watchlistId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['watchlists'] });
-    },
-  });
-}
-
-/**
- * Hook to add a stock to a watchlist
- */
-export function useAddToWatchlist() {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: ({ 
-      watchlistId, 
-      symbol, 
-      notes 
-    }: { 
-      watchlistId: string; 
-      symbol: string; 
-      notes?: string 
-    }) => addToWatchlist(watchlistId, symbol, notes),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['watchlist-items', variables.watchlistId] });
-    },
-  });
-}
-
-/**
- * Hook to remove a stock from a watchlist
- */
-export function useRemoveFromWatchlist() {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: (itemId: string) => removeFromWatchlist(itemId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['watchlist-items'] });
-    },
-  });
-}
+export const useWatchlistStore = create<WatchlistState>()(
+  persist(
+    (set) => ({
+      watchlists: [
+        { id: 'tech-giants', name: 'Tech Giants', symbols: ['AAPL', 'GOOGL', 'MSFT', 'AMZN', 'META'] },
+        { id: 'ev-revolution', name: 'EV Revolution', symbols: ['TSLA', 'RIVN', 'LCID', 'NIO'] },
+      ],
+      createWatchlist: (name) =>
+        set((state) => ({
+          watchlists: [
+            ...state.watchlists,
+            { id: `wl_${Date.now()}`, name, symbols: [] },
+          ],
+        })),
+      deleteWatchlist: (id) =>
+        set((state) => ({
+          watchlists: state.watchlists.filter((w) => w.id !== id),
+        })),
+      addSymbolToWatchlist: (id, symbol) =>
+        set((state) => ({
+          watchlists: state.watchlists.map((w) =>
+            w.id === id ? { ...w, symbols: [...w.symbols, symbol] } : w
+          ),
+        })),
+      removeSymbolFromWatchlist: (id, symbol) =>
+        set((state) => ({
+          watchlists: state.watchlists.map((w) =>
+            w.id === id
+              ? { ...w, symbols: w.symbols.filter((s) => s !== symbol) }
+              : w
+          ),
+        })),
+    }),
+    {
+      name: 'stockml-watchlists', // unique name for localStorage key
+    }
+  )
+);
