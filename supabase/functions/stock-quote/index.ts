@@ -1,30 +1,43 @@
 import { createClient } from '@supabase/supabase-js'
-import Alpaca from '@alpacahq/alpaca-trade-api'
 
 const supabaseAdmin = createClient(
-  Deno.env.get('PROJECT_SUPABASE_URL') ?? '',
-  Deno.env.get('PROJECT_SUPABASE_SERVICE_ROLE_KEY') ?? '',
+  Deno.env.get('SUPABASE_URL') ?? '',
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
 )
-
-const createDefaultAlpacaClient = () => {
-  const keyId = Deno.env.get('APCA_API_KEY_ID')
-  const secretKey = Deno.env.get('APCA_API_SECRET_KEY')
-
-  if (!keyId || !secretKey) {
-    throw new Error('Missing Alpaca credentials in environment variables')
-  }
-
-  return new Alpaca({
-    keyId,
-    secretKey,
-    paper: (Deno.env.get('ALPACA_PAPER_TRADING') ?? 'true').toLowerCase() === 'true',
-  })
-}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-application-name',
 }
+
+// --- Start of new interfaces ---
+interface AlpacaTrade {
+  t: string; // Timestamp
+  p: number; // Price
+  s: number; // Size
+}
+
+interface AlpacaQuote {
+  t: string; // Timestamp
+  bp: number; // Bid Price
+  bs: number; // Bid Size
+  ap: number; // Ask Price
+  as: number; // Ask Size
+}
+
+interface AlpacaBar {
+  t: string;
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+  v: number;
+}
+
+interface AlpacaTickerDetails {
+  name?: string;
+}
+// --- End of new interfaces ---
 
 const CACHE_PREFIX = 'quote'
 const QUOTE_TTL_MS = 60 * 1000
@@ -99,40 +112,58 @@ type QuotePayload = {
 
 const STOCK_FEED = (Deno.env.get('ALPACA_STOCK_FEED') ?? 'iex').toLowerCase() === 'sip' ? 'sip' : 'iex'
 
-let sharedAlpacaClient: Alpaca | null = null
-
-const getAlpacaClient = (): Alpaca => {
-  if (!sharedAlpacaClient) {
-    sharedAlpacaClient = createDefaultAlpacaClient()
+// --- Start of new fetch functions ---
+const alpacaFetch = async (endpoint: string, apiType: 'data' | 'api' = 'data') => {
+  const host = apiType === 'data' ? 'data.alpaca.markets' : 'api.alpaca.markets';
+  const url = `https://${host}${endpoint}`;
+  
+  const options = {
+    method: 'GET',
+    headers: {
+      'APCA-API-KEY-ID': Deno.env.get('ALPACA_KEY_ID')!,
+      'APCA-API-SECRET-KEY': Deno.env.get('ALPACA_SECRET_KEY')!,
+    },
   }
-  return sharedAlpacaClient
+
+  const response = await fetch(url, options);
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`Alpaca API Error for ${url}: ${errorText}`);
+    throw new Error(`Failed to fetch from Alpaca: ${response.status} ${response.statusText}`);
+  }
+  return response.json();
 }
+
+const getLatestTrade = (symbol: string): Promise<{ trade: AlpacaTrade }> => 
+  alpacaFetch(`/v2/stocks/${symbol}/trades/latest?feed=${STOCK_FEED}`);
+
+const getLatestQuote = (symbol: string): Promise<{ quote: AlpacaQuote }> =>
+  alpacaFetch(`/v2/stocks/${symbol}/quotes/latest?feed=${STOCK_FEED}`);
+
+const getLatestBars = (symbol: string): Promise<{ bars: AlpacaBar[] }> =>
+  alpacaFetch(`/v2/stocks/${symbol}/bars?timeframe=1Day&limit=2&sort=desc&adjustment=split&feed=${STOCK_FEED}`);
+
+const getTickerDetails = (symbol: string): Promise<{ ticker: AlpacaTickerDetails }> =>
+  alpacaFetch(`/v2/tickers/${symbol}`, 'api');
+// --- End of new fetch functions ---
+
 
 const fetchQuoteFromAlpaca = async (symbol: string): Promise<QuotePayload> => {
   const normalized = symbol.toUpperCase()
 
-  const client = getAlpacaClient()
-  const [tradeResp, quoteResp] = await Promise.all([
-    client.getLatestTrade(normalized, STOCK_FEED),
-    client.getLatestQuote(normalized, STOCK_FEED),
-  ])
+  const [tradeResp, quoteResp, barsResp] = await Promise.all([
+    getLatestTrade(normalized),
+    getLatestQuote(normalized),
+    getLatestBars(normalized),
+  ]);
 
-  const latestBarResponse = await client.getBars({
-    symbol: normalized,
-    timeframe: '1Day',
-    limit: 2,
-    sort: 'desc',
-    adjustment: 'split',
-    feed: STOCK_FEED,
-  })
+  const latestBar = barsResp.bars?.[0] ?? null;
+  const previousBar = barsResp.bars?.[1] ?? null;
 
-  const latestBar = latestBarResponse.bars.at(0) ?? null
-  const previousBar = latestBarResponse.bars.at(1) ?? null
-
-  let metadataName = normalized
+  let metadataName = normalized;
   try {
-    const metadata = await client.getTickerDetails(normalized)
-    metadataName = metadata.ticker?.name ?? normalized
+    const metadata = await getTickerDetails(normalized);
+    metadataName = metadata.ticker?.name ?? normalized;
   } catch (error) {
     console.warn(`Alpaca ticker metadata fetch failed for ${normalized}`, error)
   }

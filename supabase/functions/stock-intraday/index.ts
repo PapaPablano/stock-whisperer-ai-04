@@ -1,30 +1,25 @@
 import { createClient } from '@supabase/supabase-js'
-import Alpaca from '@alpacahq/alpaca-trade-api'
-import { type Bar } from '@alpacahq/alpaca-trade-api/dist/resources/datav2/entityv2.js'
 
 const supabaseAdmin = createClient(
-  Deno.env.get('PROJECT_SUPABASE_URL') ?? '',
-  Deno.env.get('PROJECT_SUPABASE_SERVICE_ROLE_KEY') ?? '',
+  Deno.env.get('SUPABASE_URL') ?? '',
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
 )
-
-const createDefaultAlpacaClient = () => {
-  const keyId = Deno.env.get('APCA_API_KEY_ID')
-  const secretKey = Deno.env.get('APCA_API_SECRET_KEY')
-
-  if (!keyId || !secretKey) {
-    throw new Error('Missing Alpaca credentials in environment variables')
-  }
-
-  return new Alpaca({
-    keyId,
-    secretKey,
-    paper: (Deno.env.get('ALPACA_PAPER_TRADING') ?? 'true').toLowerCase() === 'true',
-  })
-}
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-application-name',
+}
+
+// Define the Bar type manually, matching the Alpaca API v2 response
+interface Bar {
+  t: string;  // Timestamp
+  o: number;  // OpenPrice
+  h: number;  // HighPrice
+  l: number;  // LowPrice
+  c: number;  // ClosePrice
+  v: number;  // Volume
+  n: number;  // TradeCount
+  vw: number; // VWAP
 }
 
 type IntradayPoint = {
@@ -149,12 +144,12 @@ type NormalizedBar = {
 }
 
 const toNormalizedBar = (bar: Bar): NormalizedBar => ({
-  timestamp: new Date(bar.Timestamp).getTime(),
-  open: bar.OpenPrice,
-  high: bar.HighPrice,
-  low: bar.LowPrice,
-  close: bar.ClosePrice,
-  volume: bar.Volume,
+  timestamp: new Date(bar.t).getTime(),
+  open: bar.o,
+  high: bar.h,
+  low: bar.l,
+  close: bar.c,
+  volume: bar.v,
 })
 
 const aggregateNormalizedBars = (bars: NormalizedBar[], intervalMinutes: number): NormalizedBar[] => {
@@ -242,50 +237,46 @@ const mapBarsToIntradayPoints = (bars: NormalizedBar[]): IntradayPoint[] =>
     }
   })
 
-let sharedAlpacaClient: Alpaca | null = null
+const fetchAlpacaBars = async (
+  symbol: string,
+  startDate: string,
+  endDate: string,
+  timeframe: string,
+): Promise<Bar[]> => {
+  const url = new URL(`https://data.alpaca.markets/v2/stocks/${symbol}/bars`)
+  url.searchParams.append('timeframe', timeframe)
+  url.searchParams.append('start', startDate)
+  url.searchParams.append('end', endDate)
+  url.searchParams.append('adjustment', 'split')
+  url.searchParams.append('feed', 'iex')
+  url.searchParams.append('sort', 'asc')
 
-const getAlpacaClient = (): Alpaca => {
-  if (!sharedAlpacaClient) {
-    sharedAlpacaClient = createDefaultAlpacaClient()
-  }
-  return sharedAlpacaClient
-}
-
-const fetchAlpacaBars = async (params: {
-  symbol: string
-  interval: string
-  range: string
-}): Promise<{ bars: NormalizedBar[]; baseInterval: string }> => {
-  const { symbol, interval, range } = params
-  const plan = getFetchPlan(interval)
-  const end = new Date()
-  const start = computeRangeStart(range, end)
-
-  const alpaca = getAlpacaClient()
-
-  const barsGen = alpaca.getBars({
-    symbol,
-    timeframe: plan.timeframe,
-    start: start.toISOString(),
-    end: end.toISOString(),
-    limit: PAGE_LIMIT,
-    feed: STOCK_FEED,
-    sort: 'asc',
-  })
-
-  const collected: NormalizedBar[] = []
-  for await (const bar of barsGen) {
-    collected.push(toNormalizedBar(bar as unknown as Bar))
+  const options = {
+    method: 'GET',
+    headers: {
+      'APCA-API-KEY-ID': Deno.env.get('ALPACA_KEY_ID')!,
+      'APCA-API-SECRET-KEY': Deno.env.get('ALPACA_SECRET_KEY')!,
+    },
   }
 
-  const minutes = INTERVAL_MINUTES.get(plan.resultInterval) ?? 1
-  const finalBars = plan.requiresAggregation
-    ? aggregateNormalizedBars(collected, minutes)
-    : collected
+  console.log(`Fetching data from URL: ${url.toString()}`)
 
-  return { bars: finalBars, baseInterval: plan.resultInterval }
+  const response = await fetch(url.toString(), options)
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Alpaca API Error: ${errorText}`)
+    throw new Error(
+      `Failed to fetch data from Alpaca: ${response.status} ${response.statusText} - ${errorText}`,
+    )
+  }
+
+  const data = await response.json()
+  if (!data.bars) {
+    console.warn(`No bars found for symbol ${symbol} in response:`, data)
+    return []
+  }
+  return data.bars
 }
-
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -335,26 +326,43 @@ Deno.serve(async (req) => {
       )
     }
 
-    const { bars, baseInterval } = await fetchAlpacaBars({
-      symbol,
-      interval: intervalInput,
-      range,
-    })
+    const endDate = new Date()
+    const startDate = computeRangeStart(range, endDate)
 
-    if (!bars.length) {
+    const rawBars = await fetchAlpacaBars(
+      symbol,
+      startDate.toISOString(),
+      endDate.toISOString(),
+      plan.timeframe,
+    )
+
+    if (!rawBars.length) {
       return new Response(
         JSON.stringify({ error: 'No intraday data available' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
       )
     }
 
-    const intradayData = mapBarsToIntradayPoints(bars)
+    const normalizedBars = rawBars.map(toNormalizedBar)
+
+    let finalBars: NormalizedBar[]
+    if (plan.requiresAggregation) {
+      const intervalMinutes = INTERVAL_MINUTES.get(plan.resultInterval)
+      if (!intervalMinutes) {
+        throw new Error(`Invalid interval for aggregation: ${plan.resultInterval}`)
+      }
+      finalBars = aggregateNormalizedBars(normalizedBars, intervalMinutes)
+    } else {
+      finalBars = normalizedBars
+    }
+
+    const intradayData = mapBarsToIntradayPoints(finalBars)
     console.log(`Alpaca API returned ${intradayData.length} intraday points for ${symbol}`)
 
     const payload: CachePayload = {
       data: intradayData,
-      source: `alpaca:${baseInterval}`,
-      interval: baseInterval,
+      source: `alpaca:${plan.timeframe}`,
+      interval: plan.resultInterval,
       symbol,
       range,
       cachedAt: new Date().toISOString(),

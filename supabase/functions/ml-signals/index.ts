@@ -1,65 +1,64 @@
-import { createClient } from '@supabase/supabase-js';
-import Alpaca from '@alpacahq/alpaca-trade-api';
-import { RSI } from 'technicalindicators';
+import { createClient } from "@supabase/supabase-js";
+import { RSI } from "technicalindicators";
 
 const supabaseAdmin = createClient(
-  Deno.env.get('PROJECT_SUPABASE_URL') ?? '',
-  Deno.env.get('PROJECT_SUPABASE_SERVICE_ROLE_KEY') ?? '',
+  Deno.env.get('SUPABASE_URL') ?? '',
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
 );
-
-const createDefaultAlpacaClient = () => {
-  const keyId = Deno.env.get('APCA_API_KEY_ID');
-  const secretKey = Deno.env.get('APCA_API_SECRET_KEY');
-
-  if (!keyId || !secretKey) {
-    throw new Error('Missing Alpaca credentials in environment variables');
-  }
-
-  return new Alpaca({
-    keyId,
-    secretKey,
-    paper: (Deno.env.get('ALPACA_PAPER_TRADING') ?? 'true').toLowerCase() === 'true',
-  });
-};
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-application-name',
 };
 
+interface AlpacaBar {
+  t: string;
+  o: number;
+  h: number;
+  l: number;
+  c: number;
+  v: number;
+}
+
 const STOCK_FEED = (Deno.env.get('ALPACA_STOCK_FEED') ?? 'iex').toLowerCase() === 'sip' ? 'sip' : 'iex';
 const MAX_DAILY_BARS = 100; // We need enough data for indicators
 
-let sharedAlpacaClient: Alpaca | null = null;
+const alpacaFetch = async (endpoint: string, params: Record<string, string>) => {
+  const url = new URL(`https://data.alpaca.markets${endpoint}`);
+  Object.entries(params).forEach(([key, value]) => url.searchParams.append(key, value));
 
-const getAlpacaClient = (): Alpaca => {
-  if (!sharedAlpacaClient) {
-    sharedAlpacaClient = createDefaultAlpacaClient();
+  const options = {
+    method: 'GET',
+    headers: {
+      'APCA-API-KEY-ID': Deno.env.get('ALPACA_KEY_ID')!,
+      'APCA-API-SECRET-KEY': Deno.env.get('ALPACA_SECRET_KEY')!,
+    },
+  };
+
+  const response = await fetch(url.toString(), options);
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`Alpaca API Error for ${url}: ${errorText}`);
+    throw new Error(`Failed to fetch from Alpaca: ${response.status} ${response.statusText}`);
   }
-  return sharedAlpacaClient;
+  return response.json();
 };
 
-const fetchAlpacaDailyBars = async (symbol: string) => {
-  const client = getAlpacaClient();
+const fetchAlpacaDailyBars = async (symbol: string): Promise<AlpacaBar[]> => {
   const endDate = new Date();
   const startDate = new Date();
   startDate.setDate(endDate.getDate() - MAX_DAILY_BARS * 1.5); // Fetch more to be safe
 
-  const barsGen = client.getBars({
-    symbol,
+  const response = await alpacaFetch(`/v2/stocks/${symbol}/bars`, {
     timeframe: '1Day',
     start: startDate.toISOString(),
     end: endDate.toISOString(),
-    limit: MAX_DAILY_BARS,
+    limit: String(MAX_DAILY_BARS),
     feed: STOCK_FEED,
     sort: 'asc',
   });
 
-  const bars = [];
-  for await (const bar of barsGen) {
-    bars.push(bar);
-  }
-  return bars;
+  return response.bars || [];
 };
 
 const generateSignal = (rsi: number) => {
@@ -92,7 +91,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    const closePrices = bars.map(bar => bar.ClosePrice);
+    const closePrices = bars.map(bar => bar.c);
     const rsi = RSI.calculate({ period: 14, values: closePrices });
     const latestRsi = rsi[rsi.length - 1];
 
