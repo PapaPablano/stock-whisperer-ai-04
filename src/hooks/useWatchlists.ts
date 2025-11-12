@@ -11,6 +11,7 @@ interface WatchlistState {
   watchlists: Watchlist[];
   createWatchlist: (name: string) => void;
   deleteWatchlist: (id: string) => void;
+  renameWatchlist: (id: string, newName: string) => void;
   addSymbolToWatchlist: (id: string, symbol: string) => void;
   removeSymbolFromWatchlist: (id: string, symbol: string) => void;
 }
@@ -32,6 +33,12 @@ export const useWatchlistStore = create<WatchlistState>()(
       deleteWatchlist: (id) =>
         set((state) => ({
           watchlists: state.watchlists.filter((w) => w.id !== id),
+        })),
+      renameWatchlist: (id, newName) =>
+        set((state) => ({
+          watchlists: state.watchlists.map((w) =>
+            w.id === id ? { ...w, name: newName } : w
+          ),
         })),
       addSymbolToWatchlist: (id, symbol) =>
         set((state) => ({

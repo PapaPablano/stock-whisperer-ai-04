@@ -1,4 +1,4 @@
-import { Alpaca } from 'https://esm.sh/@alpacahq/alpaca-trade-api@3.1.2'
+import { Alpaca } from '@alpacahq/alpaca-trade-api'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',

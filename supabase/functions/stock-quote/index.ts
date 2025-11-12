@@ -1,5 +1,5 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.43.4'
-import Alpaca from 'https://esm.sh/@alpacahq/alpaca-trade-api@3.1.2'
+import { createClient } from '@supabase/supabase-js'
+import Alpaca from '@alpacahq/alpaca-trade-api'
 
 const supabaseAdmin = createClient(
   Deno.env.get('PROJECT_SUPABASE_URL') ?? '',

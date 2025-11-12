@@ -4,19 +4,25 @@ import { type Bar } from '@alpacahq/alpaca-trade-api/dist/resources/datav2/entit
 import { SMA, EMA, RSI } from 'technicalindicators'
 
 const supabaseAdmin = createClient(
-  Deno.env.get('PROJECT_SUPABASE_URL') ?? '',
-  Deno.env.get('PROJECT_SUPABASE_SERVICE_ROLE_KEY') ?? '',
+  Deno.env.get('SUPABASE_URL') ?? '',
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
 )
 
 const createDefaultAlpacaClient = () => {
-  const keyId = Deno.env.get('APCA_API_KEY_ID')
-  const secretKey = Deno.env.get('APCA_API_SECRET_KEY')
+  const keyId = Deno.env.get('ALPACA_KEY_ID')
+  const secretKey = Deno.env.get('ALPACA_SECRET_KEY')
 
   if (!keyId || !secretKey) {
     throw new Error('Missing Alpaca credentials in environment variables')
   }
 
-  return new Alpaca({
+  console.log('Alpaca keys:', Deno.env.get('ALPACA_KEY_ID') ? 'present' : 'missing', Deno.env.get('ALPACA_SECRET_KEY') ? 'present' : 'missing');
+  console.log('Alpaca module keys:', Object.keys(Alpaca || {}));
+  console.log('Alpaca module inspect:', JSON.stringify(Object.getOwnPropertyNames(Alpaca || {})));
+
+  // The Alpaca library is a CJS module, so we need to access the default export when using it in Deno's ESM environment.
+  const AlpacaConstructor = (Alpaca as any).default || Alpaca;
+  return new AlpacaConstructor({
     keyId,
     secretKey,
     paper: (Deno.env.get('ALPACA_PAPER_TRADING') ?? 'true').toLowerCase() === 'true',
