@@ -268,11 +268,14 @@ const Index = () => {
         };
         newBars.push(newBar);
       } else {
-        // Update the last bar
-        lastBar.close = latestTrade.p;
-        lastBar.high = Math.max(lastBar.high, latestTrade.p);
-        lastBar.low = Math.min(lastBar.low, latestTrade.p);
-        lastBar.volume += latestTrade.s;
+        // Update the last bar immutably
+        newBars[newBars.length - 1] = {
+          ...lastBar,
+          close: latestTrade.p,
+          high: Math.max(lastBar.high, latestTrade.p),
+          low: Math.min(lastBar.low, latestTrade.p),
+          volume: lastBar.volume + latestTrade.s,
+        };
       }
       
       return newBars;
