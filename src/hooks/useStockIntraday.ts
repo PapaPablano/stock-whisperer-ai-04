@@ -48,10 +48,10 @@ export const useStockIntraday = (
   const backendInterval = getBackendInterval(interval);
 
   return useQuery({
-    queryKey: ['stock-intraday', symbol, backendInterval, range],
+    queryKey: ['stock-intraday', symbol, interval, range], // Use original interval for unique key
     queryFn: async () => {
       const { data, error } = await supabase.functions.invoke('stock-intraday', {
-        body: { symbol, interval: backendInterval, range },
+        body: { symbol, interval: backendInterval, range }, // Use backendInterval for API call
       });
 
       if (error) throw error;

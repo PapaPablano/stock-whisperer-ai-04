@@ -19,6 +19,7 @@ import {
 } from "@/lib/superTrendAI";
 import type { Interval } from "@/lib/aggregateBars";
 import { useUnifiedChartData } from "@/hooks/useUnifiedChartData";
+import { useStockStream } from "@/hooks/useStockStream";
 import type { Bar } from "@/lib/aggregateBars";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -76,6 +77,9 @@ const Index = () => {
   const [intradayUnavailable, setIntradayUnavailable] = useState(false);
   const { data: liveQuote, isLoading: quoteLoading } = useStockQuote(selectedSymbol);
   const { toast } = useToast();
+  const [liveChartData, setLiveChartData] = useState<Bar[]>([]);
+  const { latestTrade, isConnected: isStreamConnected } = useStockStream(selectedSymbol);
+
 
   const intervalMap: Record<CandleInterval, Interval> = {
     "10m": "10m",
@@ -224,6 +228,60 @@ const Index = () => {
   } = unified;
 
   useEffect(() => {
+    if (unifiedBars && unifiedBars.length > 0) {
+      setLiveChartData(unifiedBars);
+    }
+  }, [unifiedBars]);
+
+  const getIntervalMilliseconds = (interval: CandleInterval): number => {
+    switch (interval) {
+      case '10m': return 10 * 60 * 1000;
+      case '1h': return 60 * 60 * 1000;
+      case '4h': return 4 * 60 * 60 * 100;
+      case '1d': return 24 * 60 * 60 * 1000;
+      default: return 60 * 1000; // Default to 1 minute for safety
+    }
+  };
+
+  useEffect(() => {
+    if (!latestTrade || liveChartData.length === 0 || candleInterval === '1d') {
+      return;
+    }
+
+    setLiveChartData(currentBars => {
+      const newBars = [...currentBars];
+      const lastBar = newBars[newBars.length - 1];
+      const tradeTime = new Date(latestTrade.t).getTime();
+      const lastBarTime = new Date(lastBar.datetime).getTime();
+      const intervalMs = getIntervalMilliseconds(candleInterval);
+      
+      if (tradeTime >= lastBarTime + intervalMs) {
+        // Create a new bar
+        const newBarStartTime = new Date(tradeTime - (tradeTime % intervalMs));
+        const newBar: Bar = {
+          datetime: newBarStartTime.toISOString(),
+          open: latestTrade.p,
+          high: latestTrade.p,
+          low: latestTrade.p,
+          close: latestTrade.p,
+          volume: latestTrade.s,
+        };
+        newBars.push(newBar);
+      } else {
+        // Update the last bar
+        lastBar.close = latestTrade.p;
+        lastBar.high = Math.max(lastBar.high, latestTrade.p);
+        lastBar.low = Math.min(lastBar.low, latestTrade.p);
+        lastBar.volume += latestTrade.s;
+      }
+      
+      return newBars;
+    });
+
+  }, [latestTrade, candleInterval]);
+
+
+  useEffect(() => {
     if (candleInterval === "1d" || !unifiedFallback) {
       return;
     }
@@ -237,7 +295,7 @@ const Index = () => {
   }, [candleInterval, toast, unifiedFallback]);
 
   const selectedBarsForDisplay = useMemo<Bar[]>(() => {
-    if (!unifiedBars || unifiedBars.length === 0) {
+    if (!liveChartData || liveChartData.length === 0) {
       return [];
     }
 
@@ -269,12 +327,12 @@ const Index = () => {
         break;
     }
 
-    const filtered = unifiedBars.filter((bar) => {
+    const filtered = liveChartData.filter((bar) => {
       const barDate = new Date(bar.datetime);
       return !Number.isNaN(barDate.getTime()) && barDate >= cutoff;
     });
 
-    const sorted = (filtered.length > 0 ? filtered : unifiedBars)
+    const sorted = (filtered.length > 0 ? filtered : liveChartData)
       .slice()
       .sort((a, b) => a.datetime.localeCompare(b.datetime));
 
@@ -294,7 +352,7 @@ const Index = () => {
     }
 
     return trimmed;
-  }, [chartInterval, dateRange, unifiedBars, unifiedSource]);
+  }, [chartInterval, dateRange, liveChartData, unifiedSource]);
 
   const chartSupertrendResult = useMemo<SuperTrendAIResult | null>(() => {
     if (!selectedIndicators.supertrendAI || selectedBarsForDisplay.length === 0) {
