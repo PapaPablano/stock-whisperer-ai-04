@@ -6,7 +6,7 @@ import { EnhancedPriceChart } from "@/components/EnhancedPriceChart";
 import { useStockHistorical } from "@/hooks/useStockHistorical";
 import { useStockQuote } from "@/hooks/useStockQuote";
 import { useGridLayout } from "@/hooks/useGridLayout";
-import { IndicatorSelector, type IndicatorConfig } from "@/components/IndicatorSelector";
+import { IndicatorSelector } from "@/components/IndicatorSelector";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StockSearch } from "@/components/StockSearch";
@@ -14,6 +14,7 @@ import { MetricCard } from "@/components/MetricCard";
 import { NewsWidget } from "@/components/NewsWidget";
 import { SignalWidget } from "@/components/SignalWidget";
 import { RefreshCw } from "lucide-react";
+import type { IndicatorConfig } from "@/config/indicators";
 
 const ResponsiveGridLayout = WidthProvider(Responsive);
 

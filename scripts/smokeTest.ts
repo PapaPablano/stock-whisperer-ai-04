@@ -25,36 +25,77 @@ interface TestConfig {
   validateResponse: (data: unknown) => boolean;
 }
 
+const hasDataArray = (value: unknown): value is { data: unknown[] } =>
+  typeof value === 'object' && value !== null && Array.isArray((value as { data?: unknown[] }).data);
+
+const isQuoteResponse = (value: unknown): value is { symbol: string; price: number } => {
+  if (!value || typeof value !== 'object') return false;
+  const { symbol, price } = value as { symbol?: unknown; price?: unknown };
+  return typeof symbol === 'string' && typeof price === 'number';
+};
+
+const hasArticlesArray = (value: unknown): value is { articles: unknown[] } =>
+  typeof value === 'object' && value !== null && Array.isArray((value as { articles?: unknown[] }).articles);
+
+const isSignalResponse = (value: unknown): value is { symbol: string; signal: string } => {
+  if (!value || typeof value !== 'object') return false;
+  const { symbol, signal } = value as { symbol?: unknown; signal?: unknown };
+  return (
+    typeof symbol === 'string' &&
+    typeof signal === 'string' &&
+    ['Buy', 'Sell', 'Hold'].includes(signal)
+  );
+};
+
+const hasSearchResults = (
+  value: unknown,
+): value is { results: Array<{ symbol?: string }> } => {
+  if (!value || typeof value !== 'object') return false;
+  const { results } = value as { results?: unknown };
+  return (
+    Array.isArray(results) &&
+    results.some((result) => typeof result === 'object' && result !== null && typeof (result as { symbol?: unknown }).symbol === 'string')
+  );
+};
+
+const isFuturesPayload = (
+  value: unknown,
+): value is { instrumentType: string; data: unknown[] } => {
+  if (!value || typeof value !== 'object') return false;
+  const { instrumentType, data } = value as { instrumentType?: unknown; data?: unknown };
+  return instrumentType === 'future' && Array.isArray(data);
+};
+
 const tests: TestConfig[] = [
   {
     functionName: 'stock-historical-v3',
     payload: { body: { symbol: TEST_SYMBOL, range: '1mo' } },
-    validateResponse: (data) => Array.isArray(data.data) && data.data.length > 0,
+    validateResponse: (data) => hasDataArray(data) && data.data.length > 0,
   },
   {
     functionName: 'stock-intraday',
     payload: { body: { symbol: TEST_SYMBOL, interval: '15m', range: '1d' } },
-    validateResponse: (data) => Array.isArray(data.data) && data.data.length > 0,
+    validateResponse: (data) => hasDataArray(data) && data.data.length > 0,
   },
   {
     functionName: 'stock-quote',
     payload: { body: { symbol: TEST_SYMBOL } },
-    validateResponse: (data) => data.symbol === TEST_SYMBOL && typeof data.price === 'number',
+    validateResponse: (data) => isQuoteResponse(data) && data.symbol === TEST_SYMBOL,
   },
   {
     functionName: 'stock-news',
     payload: { body: { symbol: TEST_SYMBOL, limit: 5 } },
-    validateResponse: (data) => Array.isArray(data.articles),
+    validateResponse: (data) => hasArticlesArray(data),
   },
   {
     functionName: 'ml-signals',
     payload: { body: { symbol: TEST_SYMBOL } },
-    validateResponse: (data) => data.symbol === TEST_SYMBOL && ['Buy', 'Sell', 'Hold'].includes(data.signal),
+    validateResponse: (data) => isSignalResponse(data) && data.symbol === TEST_SYMBOL,
   },
   {
     functionName: 'stock-search',
     payload: { body: { query: 'Apple' } },
-    validateResponse: (data) => Array.isArray(data?.results) && data.results.some((d: { symbol: string }) => d.symbol === 'AAPL'),
+    validateResponse: (data) => hasSearchResults(data) && data.results.some((d) => d.symbol === 'AAPL'),
   },
 ];
 
@@ -65,7 +106,7 @@ if (ENABLE_FUTURES_TESTS) {
       functionName: 'stock-historical-v3',
       payload: { body: { symbol: FUTURES_TEST_SYMBOL, range: '1mo', instrumentType: 'future' } },
       validateResponse: (data) =>
-        data?.instrumentType === 'future' && Array.isArray(data?.data) && data.data.length > 0,
+        isFuturesPayload(data) && data.data.length > 0,
     },
     {
       functionName: 'stock-intraday',
@@ -73,7 +114,7 @@ if (ENABLE_FUTURES_TESTS) {
         body: { symbol: FUTURES_TEST_SYMBOL, interval: '15m', range: '1d', instrumentType: 'future' },
       },
       validateResponse: (data) =>
-        data?.instrumentType === 'future' && Array.isArray(data?.data) && data.data.length > 0,
+        isFuturesPayload(data) && data.data.length > 0,
     },
   );
 } else {

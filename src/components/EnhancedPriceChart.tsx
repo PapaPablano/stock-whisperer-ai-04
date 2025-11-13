@@ -19,7 +19,7 @@ import {
   calculateKeltnerChannel,
   PriceData,
 } from '@/lib/technicalIndicators';
-import type { IndicatorConfig } from './IndicatorSelector';
+import type { IndicatorConfig } from '@/config/indicators';
 
 interface EnhancedPriceChartProps {
   symbol: string;

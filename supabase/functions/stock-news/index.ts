@@ -48,7 +48,18 @@ const cacheKeyFor = (symbol?: string, limit?: number) => {
   return `${CACHE_PREFIX}:all:${limit || 10}`
 }
 
-const alpacaFetch = async (params: Record<string, unknown>) => {
+type AlpacaFetchParams = {
+  symbols?: string
+  start?: string
+  end?: string
+  limit?: number
+  sort?: 'asc' | 'desc'
+  include_content?: boolean
+  exclude_contentless?: boolean
+  page_token?: string
+}
+
+const alpacaFetch = async (params: AlpacaFetchParams) => {
   const url = new URL('https://data.alpaca.markets/v1beta1/news');
   
   Object.entries(params).forEach(([key, value]) => {
@@ -120,16 +131,7 @@ const writeCache = async (key: string, payload: CachePayload) => {
   }
 }
 
-const fetchAlpacaNews = async (params: {
-  symbols?: string
-  start?: string
-  end?: string
-  limit?: number
-  sort?: 'asc' | 'desc'
-  include_content?: boolean
-  exclude_contentless?: boolean
-  page_token?: string
-}): Promise<AlpacaNewsResponse> => {
+const fetchAlpacaNews = async (params: AlpacaFetchParams): Promise<AlpacaNewsResponse> => {
   const response = await alpacaFetch(params);
   return response as AlpacaNewsResponse;
 }

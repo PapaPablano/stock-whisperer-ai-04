@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { IndicatorSelector, DEFAULT_INDICATOR_CONFIG, type IndicatorConfig } from './IndicatorSelector';
+import { IndicatorSelector } from './IndicatorSelector';
 import { RSIChart, MACDChart, StochasticChart, KDJChart, VolumeIndicatorChart, SuperTrendAIChart } from './IndicatorCharts';
 import {
   calculateRSI,
@@ -21,6 +21,7 @@ import {
   type TrendDirection,
   type SignalDirection,
 } from '../lib/superTrendAI';
+import { DEFAULT_INDICATOR_CONFIG, type IndicatorConfig } from '@/config/indicators';
 
 type SuperTrendAIChartPoint = {
   date: string;
