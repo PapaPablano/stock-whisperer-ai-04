@@ -1,5 +1,3 @@
-import Alpaca from '@alpacahq/alpaca-trade-api'
-
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-application-name',
@@ -36,24 +34,84 @@ const alpacaFetch = async (endpoint: string, params: Record<string, string>) => 
   return response.json()
 }
 
+interface AlpacaAssetAttributes {
+  expiration?: string
+  [key: string]: unknown
+}
+
 interface AlpacaAsset {
   symbol: string
   name: string
   asset_class: string
   exchange: string
+  attributes?: AlpacaAssetAttributes
+  expiration?: string
 }
 
-const searchAlpacaAssets = async (query: string): Promise<AlpacaAsset[]> => {
-  const assets: AlpacaAsset[] = await alpacaFetch('/v2/assets', { status: 'active', asset_class: 'us_equity' })
-  const lowerCaseQuery = query.toLowerCase()
+interface SearchResult {
+  symbol: string
+  name: string
+  type: string
+  exchange: string
+  instrumentType: 'equity' | 'future'
+  expiration?: string
+}
 
-  return assets
-    .filter(
-      (asset) =>
+const SUPPORTED_ASSET_CLASSES: Array<{
+  assetClass: 'us_equity' | 'futures'
+  instrumentType: 'equity' | 'future'
+}> = [
+  { assetClass: 'us_equity', instrumentType: 'equity' },
+  { assetClass: 'futures', instrumentType: 'future' },
+]
+
+const MAX_RESULTS = 10
+
+const searchAlpacaAssets = async (query: string): Promise<SearchResult[]> => {
+  const lowerCaseQuery = query.toLowerCase()
+  const results = new Map<string, SearchResult>()
+
+  for (const { assetClass, instrumentType } of SUPPORTED_ASSET_CLASSES) {
+    const assets: AlpacaAsset[] = await alpacaFetch('/v2/assets', {
+      status: 'active',
+      asset_class: assetClass,
+    })
+
+    for (const asset of assets) {
+      if (
         asset.symbol.toLowerCase().includes(lowerCaseQuery) ||
-        asset.name.toLowerCase().includes(lowerCaseQuery),
-    )
-    .slice(0, 10)
+        asset.name.toLowerCase().includes(lowerCaseQuery)
+      ) {
+        if (!results.has(asset.symbol)) {
+          const expiration =
+            typeof asset.expiration === 'string'
+              ? asset.expiration
+              : typeof asset.attributes?.expiration === 'string'
+              ? asset.attributes.expiration
+              : undefined
+
+          results.set(asset.symbol, {
+            symbol: asset.symbol,
+            name: asset.name,
+            type: asset.asset_class,
+            exchange: asset.exchange,
+            instrumentType,
+            expiration,
+          })
+        }
+      }
+
+      if (results.size >= MAX_RESULTS) {
+        break
+      }
+    }
+
+    if (results.size >= MAX_RESULTS) {
+      break
+    }
+  }
+
+  return Array.from(results.values()).slice(0, MAX_RESULTS)
 }
 
 Deno.serve(async (req) => {
@@ -80,8 +138,10 @@ Deno.serve(async (req) => {
       const alpacaResults = alpacaAssets.map((asset) => ({
         symbol: asset.symbol,
         name: asset.name,
-        type: asset.asset_class,
+        type: asset.type,
         exchange: asset.exchange,
+        instrumentType: asset.instrumentType,
+        expiration: asset.expiration,
       }))
 
       if (alpacaResults.length) {

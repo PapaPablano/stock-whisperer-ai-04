@@ -22,6 +22,9 @@ interface Bar {
   vw: number; // VWAP
 }
 
+type InstrumentType = 'equity' | 'future'
+const DEFAULT_INSTRUMENT_TYPE: InstrumentType = 'equity'
+
 type IntradayPoint = {
   datetime: string;
   date: string;
@@ -43,10 +46,11 @@ interface CachePayload {
   symbol: string
   range: string
   cachedAt: string
+  instrumentType: InstrumentType
 }
 
-const cacheKeyFor = (symbol: string, interval: string, range: string) =>
-  `${CACHE_PREFIX}:${symbol.toUpperCase()}:${interval}:${range}`
+const cacheKeyFor = (symbol: string, interval: string, range: string, instrumentType: InstrumentType) =>
+  `${CACHE_PREFIX}:${instrumentType}:${symbol.toUpperCase()}:${interval}:${range}`
 
 const readCache = async (key: string): Promise<CachePayload | null> => {
   try {
@@ -96,6 +100,7 @@ const writeCache = async (key: string, payload: CachePayload) => {
 const STOCK_FEED = (Deno.env.get('ALPACA_STOCK_FEED') ?? 'iex').toLowerCase() === 'sip' ? 'sip' : 'iex'
 const PAGE_LIMIT = 10_000
 const MAX_TOTAL_BARS = 50_000
+const FUTURES_BASE_URL = 'https://data.alpaca.markets/v1beta3/futures/us'
 
 const INTERVAL_MINUTES = new Map<string, number>([
   ['1m', 1],
@@ -237,45 +242,147 @@ const mapBarsToIntradayPoints = (bars: NormalizedBar[]): IntradayPoint[] =>
     }
   })
 
-const fetchAlpacaBars = async (
+const requireAlpacaCredentials = () => {
+  const keyId = Deno.env.get('ALPACA_KEY_ID')
+  const secretKey = Deno.env.get('ALPACA_SECRET_KEY')
+
+  if (!keyId || !secretKey) {
+    throw new Error('Missing Alpaca credentials in environment variables')
+  }
+
+  return { keyId, secretKey }
+}
+
+const fetchEquityBars = async (
   symbol: string,
   startDate: string,
   endDate: string,
   timeframe: string,
 ): Promise<Bar[]> => {
-  const url = new URL(`https://data.alpaca.markets/v2/stocks/${symbol}/bars`)
-  url.searchParams.append('timeframe', timeframe)
-  url.searchParams.append('start', startDate)
-  url.searchParams.append('end', endDate)
-  url.searchParams.append('adjustment', 'split')
-  url.searchParams.append('feed', 'iex')
-  url.searchParams.append('sort', 'asc')
+  const { keyId, secretKey } = requireAlpacaCredentials()
+  const collected: Bar[] = []
+  let pageToken: string | undefined
 
-  const options = {
-    method: 'GET',
-    headers: {
-      'APCA-API-KEY-ID': Deno.env.get('ALPACA_KEY_ID')!,
-      'APCA-API-SECRET-KEY': Deno.env.get('ALPACA_SECRET_KEY')!,
-    },
+  do {
+    const url = new URL(`https://data.alpaca.markets/v2/stocks/${encodeURIComponent(symbol)}/bars`)
+    url.searchParams.set('timeframe', timeframe)
+    url.searchParams.set('start', startDate)
+    url.searchParams.set('end', endDate)
+    url.searchParams.set('adjustment', 'split')
+    url.searchParams.set('feed', STOCK_FEED)
+    url.searchParams.set('sort', 'asc')
+    url.searchParams.set('limit', String(PAGE_LIMIT))
+
+    if (pageToken) {
+      url.searchParams.set('page_token', pageToken)
+    }
+
+    console.log(`Fetching equity bars from URL: ${url.toString()}`)
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        'APCA-API-KEY-ID': keyId,
+        'APCA-API-SECRET-KEY': secretKey,
+      },
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error(`Alpaca equity API error: ${errorText}`)
+      throw new Error(
+        `Failed to fetch equity data from Alpaca: ${response.status} ${response.statusText} - ${errorText}`,
+      )
+    }
+
+    const data = await response.json()
+    if (Array.isArray(data?.bars)) {
+      collected.push(...data.bars)
+    }
+
+    pageToken = data?.next_page_token ?? undefined
+
+    if (collected.length >= MAX_TOTAL_BARS) {
+      break
+    }
+  } while (pageToken)
+
+  return collected.slice(0, MAX_TOTAL_BARS)
+}
+
+const fetchFuturesBars = async (
+  symbol: string,
+  startDate: string,
+  endDate: string,
+  timeframe: string,
+): Promise<Bar[]> => {
+  const { keyId, secretKey } = requireAlpacaCredentials()
+  const collected: Bar[] = []
+  let pageToken: string | undefined
+
+  do {
+    const url = new URL(`${FUTURES_BASE_URL}/bars`)
+    url.searchParams.set('symbols', symbol)
+    url.searchParams.set('timeframe', timeframe)
+    url.searchParams.set('start', startDate)
+    url.searchParams.set('end', endDate)
+    url.searchParams.set('limit', String(PAGE_LIMIT))
+    url.searchParams.set('sort', 'asc')
+    url.searchParams.set('adjustment', 'raw')
+
+    if (pageToken) {
+      url.searchParams.set('page_token', pageToken)
+    }
+
+    console.log(`Fetching futures bars from URL: ${url.toString()}`)
+
+    const response = await fetch(url.toString(), {
+      headers: {
+        'APCA-API-KEY-ID': keyId,
+        'APCA-API-SECRET-KEY': secretKey,
+      },
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      console.error(`Alpaca futures API error: ${errorText}`)
+      throw new Error(
+        `Failed to fetch futures data from Alpaca: ${response.status} ${response.statusText} - ${errorText}`,
+      )
+    }
+
+    const data = await response.json()
+    const bars = Array.isArray(data?.bars)
+      ? data.bars
+      : Array.isArray(data?.bars?.[symbol])
+        ? data.bars[symbol]
+        : []
+
+    if (Array.isArray(bars)) {
+      collected.push(...bars)
+    }
+
+    pageToken = data?.next_page_token ?? undefined
+
+    if (collected.length >= MAX_TOTAL_BARS) {
+      break
+    }
+  } while (pageToken)
+
+  return collected.slice(0, MAX_TOTAL_BARS)
+}
+
+const fetchAlpacaBars = async (
+  symbol: string,
+  startDate: string,
+  endDate: string,
+  timeframe: string,
+  instrumentType: InstrumentType,
+): Promise<Bar[]> => {
+  if (instrumentType === 'future') {
+    return fetchFuturesBars(symbol, startDate, endDate, timeframe)
   }
 
-  console.log(`Fetching data from URL: ${url.toString()}`)
-
-  const response = await fetch(url.toString(), options)
-  if (!response.ok) {
-    const errorText = await response.text()
-    console.error(`Alpaca API Error: ${errorText}`)
-    throw new Error(
-      `Failed to fetch data from Alpaca: ${response.status} ${response.statusText} - ${errorText}`,
-    )
-  }
-
-  const data = await response.json()
-  if (!data.bars) {
-    console.warn(`No bars found for symbol ${symbol} in response:`, data)
-    return []
-  }
-  return data.bars
+  return fetchEquityBars(symbol, startDate, endDate, timeframe)
 }
 
 Deno.serve(async (req) => {
@@ -284,10 +391,25 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const body = (await req.json()) as { symbol?: string; interval?: string; range?: string } | null
+    const body = (await req.json()) as {
+      symbol?: string
+      interval?: string
+      range?: string
+      instrumentType?: InstrumentType
+    } | null
     const symbolInput = body?.symbol
     const intervalInput = body?.interval ?? '1m'
     const range = body?.range ?? '1d'
+    const instrumentInput = (body?.instrumentType as InstrumentType | undefined) ?? DEFAULT_INSTRUMENT_TYPE
+
+    if (instrumentInput !== 'equity' && instrumentInput !== 'future') {
+      return new Response(
+        JSON.stringify({ error: 'Unsupported instrument type' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      )
+    }
+
+    const instrumentType: InstrumentType = instrumentInput
 
     if (!symbolInput) {
       return new Response(
@@ -308,17 +430,20 @@ Deno.serve(async (req) => {
     }
 
     const symbol = symbolInput.toUpperCase()
-    const cacheKey = cacheKeyFor(symbol, plan.resultInterval, range)
+    const cacheKey = cacheKeyFor(symbol, plan.resultInterval, range, instrumentType)
 
     const cached = await readCache(cacheKey)
     if (cached) {
-      console.log(`Serving Alpaca API intraday cache hit for ${symbol} ${plan.resultInterval} ${range}`)
+      console.log(
+        `Serving Alpaca API intraday cache hit for ${instrumentType} ${symbol} ${plan.resultInterval} ${range}`,
+      )
       return new Response(
         JSON.stringify({
           data: cached.data,
           source: cached.source,
           interval: cached.interval,
           symbol: cached.symbol,
+          instrumentType: cached.instrumentType,
           cacheHit: true,
           cachedAt: cached.cachedAt,
         }),
@@ -334,6 +459,7 @@ Deno.serve(async (req) => {
       startDate.toISOString(),
       endDate.toISOString(),
       plan.timeframe,
+      instrumentType,
     )
 
     if (!rawBars.length) {
@@ -357,15 +483,16 @@ Deno.serve(async (req) => {
     }
 
     const intradayData = mapBarsToIntradayPoints(finalBars)
-    console.log(`Alpaca API returned ${intradayData.length} intraday points for ${symbol}`)
+    console.log(`Alpaca API returned ${intradayData.length} intraday points for ${instrumentType} ${symbol}`)
 
     const payload: CachePayload = {
       data: intradayData,
-      source: `alpaca:${plan.timeframe}`,
+      source: `alpaca:${instrumentType}:${plan.timeframe}`,
       interval: plan.resultInterval,
       symbol,
       range,
       cachedAt: new Date().toISOString(),
+      instrumentType,
     }
 
     await writeCache(cacheKey, payload)
@@ -376,6 +503,7 @@ Deno.serve(async (req) => {
         source: payload.source,
         interval: payload.interval,
         symbol,
+        instrumentType,
       }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
     )

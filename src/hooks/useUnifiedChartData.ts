@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { useStockHistorical, type HistoricalData } from "./useStockHistorical";
-import { useStockIntraday } from "./useStockIntraday";
+import { useStockIntraday, type InstrumentType } from "./useStockIntraday";
 import {
   aggregateBars,
   filterBySession,
@@ -38,18 +38,22 @@ export const useUnifiedChartData = (
   const maxBars = opts.maxBars ?? 5000;
   const historyRange = opts.historyRange ?? "5y";
   const intradayRange = opts.intradayRange ?? "2y";
+  const instrumentType: InstrumentType = session === "FUTURES_EXT" ? "future" : "equity";
 
   const isDaily = interval === "1d";
   const {
     data: historicalDaily,
     isLoading: ld,
     error: ed,
-  } = useStockHistorical(symbol, historyRange);
+  } = useStockHistorical(symbol, historyRange, { instrumentType });
   const {
     data: intra,
     isLoading: li,
     error: ei,
-  } = useStockIntraday(symbol, interval, intradayRange, { enabled: !isDaily });
+  } = useStockIntraday(symbol, interval, intradayRange, {
+    enabled: !isDaily,
+    instrumentType,
+  });
 
   const loading = isDaily ? ld : li;
   const error = isDaily ? ed : ei;
@@ -130,7 +134,7 @@ export const useUnifiedChartData = (
     const agg = aggregateBars(sessionFiltered, interval, tz);
     const capped = agg.length > maxBars ? agg.slice(-maxBars) : agg;
     return { bars: capped, source: "aggregated" as const, fallback: false };
-  }, [historicalDaily, interval, intra, isDaily, session, tz, maxBars]);
+  }, [historicalDaily, instrumentType, interval, intra, isDaily, session, tz, maxBars]);
 
   const effectiveError = fallback ? null : error;
 

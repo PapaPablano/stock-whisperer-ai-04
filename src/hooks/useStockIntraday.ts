@@ -2,15 +2,17 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { Interval } from '@/lib/aggregateBars';
 
+export type InstrumentType = 'equity' | 'future';
+
 export interface IntradayData {
   datetime: string;
   date: string;
   time: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+  volume: number | null;
 }
 
 export interface IntradayResponse {
@@ -18,10 +20,13 @@ export interface IntradayResponse {
   source: string;
   interval: string;
   symbol: string;
+  instrumentType: InstrumentType;
+  cacheHit?: boolean;
 }
 
 interface UseStockIntradayOptions {
   enabled?: boolean;
+  instrumentType?: InstrumentType;
 }
 
 export const useStockIntraday = (
@@ -30,28 +35,13 @@ export const useStockIntraday = (
   range: '1d' | '5d' | '1w' | '1mo' | '3mo' | '6mo' | '1y' | '2y' = '1d',
   options?: UseStockIntradayOptions,
 ) => {
-  // Map frontend interval to backend-supported interval
-  const getBackendInterval = (frontendInterval: Interval): string => {
-    const mapping: { [key in Interval]: string } = {
-      '1m': '1Min',
-      '5m': '5Min',
-      '10m': '10Min',
-      '15m': '15Min',
-      '30m': '30Min',
-      '1h': '1Hour',
-      '4h': '1Hour', // Backend will aggregate from 1Hour for 4h view
-      '1d': '1Day',
-    };
-    return mapping[frontendInterval] || '1Min'; // Default to 1Min if not found
-  };
-
-  const backendInterval = getBackendInterval(interval);
+  const instrumentType = options?.instrumentType ?? 'equity';
 
   return useQuery({
-    queryKey: ['stock-intraday', symbol, interval, range], // Use original interval for unique key
+    queryKey: ['stock-intraday', symbol, interval, range, instrumentType],
     queryFn: async () => {
       const { data, error } = await supabase.functions.invoke('stock-intraday', {
-        body: { symbol, interval: backendInterval, range }, // Use backendInterval for API call
+        body: { symbol, interval, range, instrumentType },
       });
 
       if (error) throw error;
