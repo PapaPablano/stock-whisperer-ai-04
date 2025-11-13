@@ -22,7 +22,7 @@ const ENABLE_FUTURES_TESTS =
 interface TestConfig {
   functionName: string;
   payload: object;
-  validateResponse: (data: any) => boolean;
+  validateResponse: (data: unknown) => boolean;
 }
 
 const tests: TestConfig[] = [
