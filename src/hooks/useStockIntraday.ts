@@ -34,6 +34,12 @@ export type InstrumentType = 'equity' | 'future';
  *   // Perform calculations
  * }
  * ```
+ * Intraday data for a single bar/candle.
+ * 
+ * @remarks
+ * Breaking change: All numeric fields (open, high, low, close, volume) are now nullable.
+ * This change allows the API to handle cases where data is unavailable or incomplete.
+ * Consumers of this interface should handle null values appropriately.
  */
 export interface IntradayData {
   /** ISO 8601 datetime string (e.g., '2024-01-01T09:30:00Z') */

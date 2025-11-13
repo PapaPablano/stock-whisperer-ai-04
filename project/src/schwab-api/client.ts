@@ -188,7 +188,7 @@ export class SchwabAPIClient {
 
   private requireStreamer(): SchwabStreamer {
     if (!this.streamer) {
-      throw new Error('Streaming connection is not established. Call connectStreamer first.')
+      throw new Error('Streaming connection is not established. Please call connectStreamer() before subscribing to streams.')
     }
     return this.streamer
   }
