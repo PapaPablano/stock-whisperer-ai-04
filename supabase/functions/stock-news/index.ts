@@ -1,8 +1,9 @@
-import { supabaseAdmin } from '../_shared/supabaseAdminClient.ts'
-import {
-  createDefaultAlpacaClient,
-  type AlpacaRestClient,
-} from '../_shared/alpaca/client.ts'
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseAdmin = createClient(
+  Deno.env.get('SUPABASE_URL') ?? '',
+  Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
+)
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -46,6 +47,33 @@ const cacheKeyFor = (symbol?: string, limit?: number) => {
   }
   return `${CACHE_PREFIX}:all:${limit || 10}`
 }
+
+const alpacaFetch = async (params: Record<string, any>) => {
+  const url = new URL('https://data.alpaca.markets/v1beta1/news');
+  
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      url.searchParams.append(key, String(value));
+    }
+  });
+
+  const options = {
+    method: 'GET',
+    headers: {
+      'APCA-API-KEY-ID': Deno.env.get('ALPACA_KEY_ID')!,
+      'APCA-API-SECRET-KEY': Deno.env.get('ALPACA_SECRET_KEY')!,
+    },
+  };
+
+  const response = await fetch(url.toString(), options);
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error(`Alpaca News API Error: ${errorText}`);
+    throw new Error(`Failed to fetch news from Alpaca: ${response.status} ${response.statusText}`);
+  }
+  return response.json();
+};
+
 
 const readCache = async (key: string): Promise<CachePayload | null> => {
   try {
@@ -92,65 +120,18 @@ const writeCache = async (key: string, payload: CachePayload) => {
   }
 }
 
-let sharedAlpacaClient: AlpacaRestClient | null = null
-
-const getAlpacaClient = (): AlpacaRestClient => {
-  if (!sharedAlpacaClient) {
-    sharedAlpacaClient = createDefaultAlpacaClient()
-  }
-  return sharedAlpacaClient
-}
-
 const fetchAlpacaNews = async (params: {
-  client: AlpacaRestClient
   symbols?: string
   start?: string
   end?: string
   limit?: number
   sort?: 'asc' | 'desc'
-  includeContent?: boolean
-  excludeContentless?: boolean
-  pageToken?: string
+  include_content?: boolean
+  exclude_contentless?: boolean
+  page_token?: string
 }): Promise<AlpacaNewsResponse> => {
-  const {
-    client,
-    symbols,
-    start,
-    end,
-    limit = 10,
-    sort = 'desc',
-    includeContent = false,
-    excludeContentless = false,
-    pageToken,
-  } = params
-
-  // Build the news URL
-  const url = new URL('/v1beta1/news', 'https://data.alpaca.markets')
-  
-  if (symbols) {
-    url.searchParams.set('symbols', symbols)
-  }
-  if (start) {
-    url.searchParams.set('start', start)
-  }
-  if (end) {
-    url.searchParams.set('end', end)
-  }
-  url.searchParams.set('limit', String(limit))
-  url.searchParams.set('sort', sort)
-  if (includeContent) {
-    url.searchParams.set('include_content', 'true')
-  }
-  if (excludeContentless) {
-    url.searchParams.set('exclude_contentless', 'true')
-  }
-  if (pageToken) {
-    url.searchParams.set('page_token', pageToken)
-  }
-
-  // Use the private request method by accessing it
-  const response = await (client as unknown as { request: <T>(url: URL) => Promise<T> }).request<AlpacaNewsResponse>(url)
-  return response
+  const response = await alpacaFetch(params);
+  return response as AlpacaNewsResponse;
 }
 
 Deno.serve(async (req) => {
@@ -213,16 +194,14 @@ Deno.serve(async (req) => {
       }
     }
 
-    const client = getAlpacaClient()
     const newsResponse = await fetchAlpacaNews({
-      client,
       symbols: symbolsParam,
       start,
       end,
       limit,
       sort,
-      includeContent,
-      excludeContentless,
+      include_content: includeContent,
+      exclude_contentless: excludeContentless,
     })
 
     if (!newsResponse.news || newsResponse.news.length === 0) {

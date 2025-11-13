@@ -1,7 +1,4 @@
-import {
-  createDefaultAlpacaClient,
-  type AlpacaRestClient,
-} from '../_shared/alpaca/client.ts'
+import Alpaca from '@alpacahq/alpaca-trade-api'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -18,13 +15,45 @@ interface YahooSearchResponse {
   }>
 }
 
-let sharedAlpacaClient: AlpacaRestClient | null = null
+const alpacaFetch = async (endpoint: string, params: Record<string, string>) => {
+  const url = new URL(`https://api.alpaca.markets${endpoint}`)
+  Object.entries(params).forEach(([key, value]) => url.searchParams.append(key, value))
 
-const getAlpacaClient = (): AlpacaRestClient => {
-  if (!sharedAlpacaClient) {
-    sharedAlpacaClient = createDefaultAlpacaClient()
+  const options = {
+    method: 'GET',
+    headers: {
+      'APCA-API-KEY-ID': Deno.env.get('ALPACA_KEY_ID')!,
+      'APCA-API-SECRET-KEY': Deno.env.get('ALPACA_SECRET_KEY')!,
+    },
   }
-  return sharedAlpacaClient
+
+  const response = await fetch(url.toString(), options)
+  if (!response.ok) {
+    const errorText = await response.text()
+    console.error(`Alpaca API Error for ${url}: ${errorText}`)
+    throw new Error(`Failed to fetch from Alpaca: ${response.status} ${response.statusText}`)
+  }
+  return response.json()
+}
+
+interface AlpacaAsset {
+  symbol: string
+  name: string
+  asset_class: string
+  exchange: string
+}
+
+const searchAlpacaAssets = async (query: string): Promise<AlpacaAsset[]> => {
+  const assets: AlpacaAsset[] = await alpacaFetch('/v2/assets', { status: 'active', asset_class: 'us_equity' })
+  const lowerCaseQuery = query.toLowerCase()
+
+  return assets
+    .filter(
+      (asset) =>
+        asset.symbol.toLowerCase().includes(lowerCaseQuery) ||
+        asset.name.toLowerCase().includes(lowerCaseQuery),
+    )
+    .slice(0, 10)
 }
 
 Deno.serve(async (req) => {
@@ -46,18 +75,13 @@ Deno.serve(async (req) => {
     console.log(`Searching for: ${query}`)
 
     try {
-      const alpacaClient = getAlpacaClient()
-      const alpacaResponse = await alpacaClient.searchTickers({
-        search: query,
-        active: true,
-        limit: 10,
-      })
+      const alpacaAssets = await searchAlpacaAssets(query)
 
-      const alpacaResults = (alpacaResponse.tickers ?? []).map((ticker) => ({
-        symbol: ticker.symbol,
-        name: ticker.name ?? ticker.symbol,
-        type: ticker.asset_class,
-        exchange: ticker.exchange,
+      const alpacaResults = alpacaAssets.map((asset) => ({
+        symbol: asset.symbol,
+        name: asset.name,
+        type: asset.asset_class,
+        exchange: asset.exchange,
       }))
 
       if (alpacaResults.length) {

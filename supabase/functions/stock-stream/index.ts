@@ -1,6 +1,23 @@
-import { connectEquitiesStream } from '../_shared/alpaca/stream.ts'
-import { resolveAlpacaCredentials } from '../_shared/alpaca/client.ts'
+import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
+// Define the shape of the incoming trade data from the WebSocket
+interface AlpacaTrade {
+  T: string // Message Type
+  S: string // Symbol
+  i: number // Trade ID
+  x: string // Exchange
+  p: number // Price
+  s: number // Size
+  t: string // Timestamp
+  c: string[] // Conditions
+  z: string // Tape
+}
+
+const ALPACA_KEY_ID = Deno.env.get('ALPACA_KEY_ID')!
+const ALPACA_SECRET_KEY = Deno.env.get('ALPACA_SECRET_KEY')!
+const WEBSOCKET_URL = 'wss://stream.data.alpaca.markets/v2/iex' // Using IEX for free data
+
+// CORS headers
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-application-name',
@@ -18,7 +35,7 @@ const corsHeaders = {
  * - quotes: Whether to subscribe to quotes (default: false)
  * - bars: Whether to subscribe to bars (default: false)
  */
-Deno.serve(async (req) => {
+serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
   }
@@ -53,114 +70,73 @@ Deno.serve(async (req) => {
 
         // Helper to send SSE message
         const sendEvent = (event: string, data: unknown) => {
-          const message = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
+          const message = `event: ${event}
+data: ${JSON.stringify(data)}
+
+`
           controller.enqueue(encoder.encode(message))
         }
 
         try {
-          // Prepare subscription based on user preferences
-          const subscription: {
-            trades?: string[]
-            quotes?: string[]
-            bars?: string[]
-          } = {}
+          const socket = new WebSocket(WEBSOCKET_URL)
 
-          if (subscribeTrades) subscription.trades = symbols
-          if (subscribeQuotes) subscription.quotes = symbols
-          if (subscribeBars) subscription.bars = symbols
+          socket.onopen = () => {
+            console.log('WebSocket connection opened. Authenticating...')
+            // Authenticate
+            socket.send(JSON.stringify({
+              action: 'auth',
+              key: ALPACA_KEY_ID,
+              secret: ALPACA_SECRET_KEY,
+            }))
+          }
 
-          console.log('Connecting to Alpaca stream with symbols:', symbols)
-
-          // Connect to Alpaca WebSocket
-          const socket = await connectEquitiesStream({
-            credentials: resolveAlpacaCredentials(),
-            symbols: subscription,
-            onOpen: () => {
-              console.log('Connected to Alpaca stream')
-              sendEvent('connected', { 
-                message: 'Connected to real-time data stream',
-                symbols,
-                subscriptions: {
-                  trades: subscribeTrades,
-                  quotes: subscribeQuotes,
-                  bars: subscribeBars,
-                }
-              })
-            },
-            onMessage: (data: unknown) => {
-              // Forward Alpaca messages to client
-              // Alpaca sends arrays of messages
-              if (Array.isArray(data)) {
-                for (const item of data) {
-                  if (item.T === 't') {
-                    // Trade update
-                    sendEvent('trade', {
-                      symbol: item.S,
-                      price: item.p,
-                      size: item.s,
-                      timestamp: item.t,
-                      conditions: item.c,
-                      exchange: item.x,
-                    })
-                  } else if (item.T === 'q') {
-                    // Quote update
-                    sendEvent('quote', {
-                      symbol: item.S,
-                      bidPrice: item.bp,
-                      bidSize: item.bs,
-                      askPrice: item.ap,
-                      askSize: item.as,
-                      timestamp: item.t,
-                      conditions: item.c,
-                    })
-                  } else if (item.T === 'b') {
-                    // Bar update
-                    sendEvent('bar', {
-                      symbol: item.S,
-                      open: item.o,
-                      high: item.h,
-                      low: item.l,
-                      close: item.c,
-                      volume: item.v,
-                      timestamp: item.t,
-                      tradeCount: item.n,
-                      vwap: item.vw,
-                    })
-                  } else if (item.T === 'success' || item.T === 'subscription') {
-                    // Status messages
-                    sendEvent('status', item)
-                  }
-                }
+          socket.onmessage = (event) => {
+            const messages = JSON.parse(event.data)
+            for (const msg of messages) {
+              if (msg.T === 'success' && msg.msg === 'authenticated') {
+                console.log('Authentication successful. Subscribing to trades...')
+                // Subscribe to trades for the given symbols
+                socket.send(JSON.stringify({
+                  action: 'subscribe',
+                  trades: symbols,
+                }))
+              } else if (msg.T === 't') {
+                // This is a trade message
+                const trade: AlpacaTrade = msg
+                const message = `data: ${JSON.stringify(trade)}\n\n`
+                controller.enqueue(new TextEncoder().encode(message))
               } else {
-                // Single message
-                sendEvent('message', data)
+                console.log('Received other message:', msg)
               }
-            },
-            onError: (event) => {
-              console.error('Alpaca stream error:', event)
-              sendEvent('error', { 
-                message: 'Stream error occurred',
-                error: event instanceof ErrorEvent ? event.message : 'Unknown error'
-              })
-            },
-            onClose: (event) => {
-              console.log('Alpaca stream closed:', event.code, event.reason)
-              sendEvent('closed', { 
-                message: 'Stream closed',
-                code: event.code,
-                reason: event.reason
-              })
+            }
+          }
+
+          socket.onclose = () => {
+            console.log('WebSocket connection closed.')
+            try {
               controller.close()
-            },
-          })
+            } catch (e) {
+              // Ignore if controller is already closed
+            }
+          }
 
-          // Handle client disconnect
-          req.signal.addEventListener('abort', () => {
-            console.log('Client disconnected, closing Alpaca stream')
-            socket.close()
-            controller.close()
-          })
+          socket.onerror = (err) => {
+            console.error('WebSocket error:', err)
+            controller.error(err)
+          }
 
+          // Clean up on client disconnect
+          req.signal.onabort = () => {
+            console.log('Client disconnected, closing WebSocket connection.')
+            if (socket.readyState === WebSocket.OPEN) {
+              socket.close()
+            }
+            try {
+              controller.close()
+            } catch (e) {
+              // Ignore if controller is already closed
+            }
+          }
         } catch (error) {
           console.error('Error setting up stream:', error)
           sendEvent('error', { 
