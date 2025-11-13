@@ -278,7 +278,7 @@ const Index = () => {
       return newBars;
     });
 
-  }, [latestTrade, candleInterval]);
+  }, [latestTrade, candleInterval, liveChartData]);
 
 
   useEffect(() => {
