@@ -72,6 +72,11 @@ const searchAlpacaAssets = async (query: string): Promise<SearchResult[]> => {
   const results = new Map<string, SearchResult>()
 
   for (const { assetClass, instrumentType } of SUPPORTED_ASSET_CLASSES) {
+    // Check if we already have enough results before fetching more assets
+    if (results.size >= MAX_RESULTS) {
+      break
+    }
+
     const assets: AlpacaAsset[] = await alpacaFetch('/v2/assets', {
       status: 'active',
       asset_class: assetClass,
@@ -104,10 +109,6 @@ const searchAlpacaAssets = async (query: string): Promise<SearchResult[]> => {
       if (results.size >= MAX_RESULTS) {
         break
       }
-    }
-
-    if (results.size >= MAX_RESULTS) {
-      break
     }
   }
 
