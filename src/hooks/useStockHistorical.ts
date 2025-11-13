@@ -12,10 +12,10 @@ export interface HistoricalData {
 
 export const useStockHistorical = (symbol: string, range: string = '1mo') => {
   return useQuery({
-    queryKey: ['stock-historical', symbol, range],
+    queryKey: ['stock-historical-v3', symbol, range],
     queryFn: async () => {
       console.log(`[useStockHistorical] Fetching ${symbol} with range: ${range}`);
-      const { data, error } = await supabase.functions.invoke('stock-historical', {
+      const { data, error } = await supabase.functions.invoke('stock-historical-v3', {
         body: { symbol, range },
       });
 
