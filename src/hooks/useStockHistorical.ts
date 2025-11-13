@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import type { InstrumentType } from './useStockIntraday';
 
 export interface HistoricalData {
   date: string;
@@ -10,13 +11,22 @@ export interface HistoricalData {
   volume: number;
 }
 
-export const useStockHistorical = (symbol: string, range: string = '1mo') => {
+interface UseStockHistoricalOptions {
+  instrumentType?: InstrumentType;
+}
+
+export const useStockHistorical = (
+  symbol: string,
+  range: string = '1mo',
+  options?: UseStockHistoricalOptions,
+) => {
+  const instrumentType = options?.instrumentType ?? 'equity';
   return useQuery({
-    queryKey: ['stock-historical-v3', symbol, range],
+    queryKey: ['stock-historical-v3', symbol, range, instrumentType],
     queryFn: async () => {
-      console.log(`[useStockHistorical] Fetching ${symbol} with range: ${range}`);
+      console.log(`[useStockHistorical] Fetching ${instrumentType} ${symbol} with range: ${range}`);
       const { data, error } = await supabase.functions.invoke('stock-historical-v3', {
-        body: { symbol, range },
+        body: { symbol, range, instrumentType },
       });
 
       if (error) {
@@ -24,7 +34,9 @@ export const useStockHistorical = (symbol: string, range: string = '1mo') => {
         throw error;
       }
       
-      console.log(`[useStockHistorical] Received ${data?.data?.length || 0} data points from ${data?.source}`);
+      console.log(
+        `[useStockHistorical] Received ${data?.data?.length || 0} data points from ${data?.source} (${data?.instrumentType})`,
+      );
       return data.data as HistoricalData[];
     },
     enabled: !!symbol,
