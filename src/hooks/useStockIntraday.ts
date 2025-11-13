@@ -4,14 +4,65 @@ import type { Interval } from '@/lib/aggregateBars';
 
 export type InstrumentType = 'equity' | 'future';
 
+/**
+ * Represents intraday market data for a stock or futures contract.
+ * 
+ * @remarks
+ * Breaking Change: All numeric fields (open, high, low, close, volume) now support null values
+ * to handle missing or unavailable data from various market data sources. Consumers should
+ * handle null values appropriately when rendering or performing calculations.
+ * Represents a single intraday data point for a stock or future.
+ * 
+ * **BREAKING CHANGE**: As of commit 17cf177, all numeric fields (open, high, low, close, volume)
+ * are now nullable to handle cases where data may be incomplete or unavailable from the API.
+ * 
+ * Consumers of this interface should handle null values appropriately:
+ * - Check for null before performing calculations
+ * - Use optional chaining or nullish coalescing operators
+ * - Consider filtering out null values before charting
+ * 
+ * @example
+ * ```typescript
+ * const data: IntradayData = {
+ *   datetime: '2024-01-01T09:30:00Z',
+ *   date: '2024-01-01',
+ *   time: '09:30:00',
+ *   open: 100.5,
+ *   high: 101.2,
+ *   low: 100.1,
+ *   close: 101.0,
+ *   volume: 1000000
+ * };
+ * 
+ * // Handle potential null values
+ * const safeClose = data.close ?? 0;
+ * if (data.close !== null) {
+ *   // Perform calculations
+ * }
+ * ```
+ * Intraday data for a single bar/candle.
+ * 
+ * @remarks
+ * Breaking change: All numeric fields (open, high, low, close, volume) are now nullable.
+ * This change allows the API to handle cases where data is unavailable or incomplete.
+ * Consumers of this interface should handle null values appropriately.
+ */
 export interface IntradayData {
+  /** ISO 8601 datetime string (e.g., '2024-01-01T09:30:00Z') */
   datetime: string;
+  /** Date in YYYY-MM-DD format */
   date: string;
+  /** Time in HH:MM:SS format */
   time: string;
+  /** Opening price. May be null if data is incomplete or unavailable. */
   open: number | null;
+  /** Highest price during the interval. May be null if data is incomplete or unavailable. */
   high: number | null;
+  /** Lowest price during the interval. May be null if data is incomplete or unavailable. */
   low: number | null;
+  /** Closing price. May be null if data is incomplete or unavailable. */
   close: number | null;
+  /** Trading volume. May be null if data is incomplete or unavailable. */
   volume: number | null;
 }
 
