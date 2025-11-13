@@ -4,6 +4,14 @@ import type { Interval } from '@/lib/aggregateBars';
 
 export type InstrumentType = 'equity' | 'future';
 
+/**
+ * Represents intraday market data for a stock or futures contract.
+ * 
+ * @remarks
+ * Breaking Change: All numeric fields (open, high, low, close, volume) now support null values
+ * to handle missing or unavailable data from various market data sources. Consumers should
+ * handle null values appropriately when rendering or performing calculations.
+ */
 export interface IntradayData {
   datetime: string;
   date: string;
