@@ -4,6 +4,14 @@ import type { Interval } from '@/lib/aggregateBars';
 
 export type InstrumentType = 'equity' | 'future';
 
+/**
+ * Intraday data for a single bar/candle.
+ * 
+ * @remarks
+ * Breaking change: All numeric fields (open, high, low, close, volume) are now nullable.
+ * This change allows the API to handle cases where data is unavailable or incomplete.
+ * Consumers of this interface should handle null values appropriately.
+ */
 export interface IntradayData {
   datetime: string;
   date: string;
