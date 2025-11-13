@@ -237,7 +237,7 @@ const Index = () => {
     switch (interval) {
       case '10m': return 10 * 60 * 1000;
       case '1h': return 60 * 60 * 1000;
-      case '4h': return 4 * 60 * 60 * 100;
+      case '4h': return 4 * 60 * 60 * 1000;
       case '1d': return 24 * 60 * 60 * 1000;
       default: return 60 * 1000; // Default to 1 minute for safety
     }
