@@ -181,7 +181,7 @@ export class SchwabStreamer {
 
   private ensureConnected(): void {
     if (!this.socket || this.socket.readyState !== 1) {
-      throw new Error('Streamer is not connected')
+      throw new Error('Streamer is not connected. Call connect() first before subscribing or sending requests.')
     }
   }
 
@@ -220,7 +220,7 @@ export class SchwabStreamer {
 
     const globalWs = (globalThis as { WebSocket?: { new (target: string): WebSocketLike } }).WebSocket
     if (!globalWs) {
-      throw new Error('WebSocket factory not provided and global WebSocket is undefined')
+      throw new Error('WebSocket is not available. Either provide a custom WebSocket factory via wsFactory option, or ensure the runtime supports WebSocket.')
     }
 
     return new globalWs(url)

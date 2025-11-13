@@ -13,7 +13,13 @@ export function loadSchwabConfig(env: PartialEnv = process.env): SchwabConfig {
   const redirectUri = env.SCHWAB_REDIRECT_URI
 
   if (!clientId || !clientSecret || !redirectUri) {
-    throw new Error('Missing Schwab OAuth environment variables.')
+    const missingVars = [];
+    if (!clientId) missingVars.push('SCHWAB_CLIENT_ID');
+    if (!clientSecret) missingVars.push('SCHWAB_CLIENT_SECRET');
+    if (!redirectUri) missingVars.push('SCHWAB_REDIRECT_URI');
+    throw new Error(
+      `Missing required Schwab OAuth environment variables: ${missingVars.join(', ')}. Please set SCHWAB_CLIENT_ID, SCHWAB_CLIENT_SECRET, and SCHWAB_REDIRECT_URI.`
+    );
   }
 
   return {

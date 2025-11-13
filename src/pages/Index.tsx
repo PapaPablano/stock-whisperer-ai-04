@@ -80,7 +80,7 @@ const Index = () => {
   const { data: liveQuote, isLoading: quoteLoading } = useStockQuote(selectedSymbol);
   const { toast } = useToast();
   const [liveChartData, setLiveChartData] = useState<Bar[]>([]);
-  const { latestTrade, isConnected: isStreamConnected } = useStockStream(selectedSymbol);
+  const { latestTrade } = useStockStream({ symbols: [selectedSymbol], subscribeTrades: true });
 
 
   const intervalMap: Record<CandleInterval, Interval> = {
@@ -245,6 +245,12 @@ const Index = () => {
     }
   };
 
+  const alignTimeToInterval = (timestamp: number, intervalMs: number): number => {
+    // Align timestamp to interval boundary
+    // For intraday intervals, align to the start of the interval period
+    return Math.floor(timestamp / intervalMs) * intervalMs;
+  };
+
   useEffect(() => {
     if (!latestTrade || liveChartData.length === 0 || candleInterval === '1d') {
       return;
@@ -263,6 +269,10 @@ const Index = () => {
         const alignedTime = floorToBucket(tradeISO, chartInterval, SESSIONS["EQUITY_RTH"].tz);
         const newBar: Bar = {
           datetime: alignedTime,
+        // Create a new bar aligned to interval boundary
+        const alignedStartTime = alignTimeToInterval(tradeTime, intervalMs);
+        const newBar: Bar = {
+          datetime: new Date(alignedStartTime).toISOString(),
           open: latestTrade.p,
           high: latestTrade.p,
           low: latestTrade.p,
@@ -271,17 +281,20 @@ const Index = () => {
         };
         newBars.push(newBar);
       } else {
-        // Update the last bar
-        lastBar.close = latestTrade.p;
-        lastBar.high = Math.max(lastBar.high, latestTrade.p);
-        lastBar.low = Math.min(lastBar.low, latestTrade.p);
-        lastBar.volume += latestTrade.s;
+        // Update the last bar immutably
+        newBars[newBars.length - 1] = {
+          ...lastBar,
+          close: latestTrade.p,
+          high: Math.max(lastBar.high, latestTrade.p),
+          low: Math.min(lastBar.low, latestTrade.p),
+          volume: lastBar.volume + latestTrade.s,
+        };
       }
       
       return newBars;
     });
 
-  }, [latestTrade, candleInterval]);
+  }, [latestTrade, candleInterval, liveChartData]);
 
 
   useEffect(() => {
