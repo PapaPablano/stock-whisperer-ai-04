@@ -48,7 +48,7 @@ export class SchwabOAuth {
       return this.refresh(token.refreshToken)
     }
 
-    throw new Error('OAuth token is not available. Complete the authorization flow.')
+    throw new Error('OAuth token is not available. Please initiate the authorization flow by calling buildAuthorizationUrl() and exchanging the authorization code.')
   }
 
   async exchange(code: string): Promise<OAuthToken> {
