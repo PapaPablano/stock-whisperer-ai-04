@@ -10,7 +10,6 @@ import { useStockQuote } from "@/hooks/useStockQuote";
 import { useStockHistorical } from "@/hooks/useStockHistorical";
 import { useState, useMemo, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
-import { DEFAULT_INDICATOR_CONFIG, type IndicatorConfig } from "@/components/IndicatorSelector";
 import type { PriceData } from "@/lib/technicalIndicators";
 import {
   calculateSuperTrendAI,
@@ -27,6 +26,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { TIME_BUTTONS } from "@/lib/chartConfig";
 import { useToast } from "@/hooks/use-toast";
+import { DEFAULT_INDICATOR_CONFIG, type IndicatorConfig } from "@/config/indicators";
 
 const formatCurrency = (value?: number | null) => {
   if (value === null || value === undefined || Number.isNaN(value)) return "—";

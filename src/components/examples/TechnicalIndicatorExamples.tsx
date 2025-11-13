@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { TechnicalAnalysisDashboard } from '@/components/TechnicalAnalysisDashboard';
-import { IndicatorSelector, type IndicatorConfig } from '@/components/IndicatorSelector';
+import { IndicatorSelector } from '@/components/IndicatorSelector';
 import { useStockHistorical } from '@/hooks/useStockHistorical';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { calculateRSI, calculateMACD, calculateSMA } from '@/lib/technicalIndicators';
+import type { IndicatorConfig } from '@/config/indicators';
 
 /**
  * Example 1: Basic Usage with Default Indicators

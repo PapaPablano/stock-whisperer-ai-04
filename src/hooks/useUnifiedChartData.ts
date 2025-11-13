@@ -134,7 +134,7 @@ export const useUnifiedChartData = (
     const agg = aggregateBars(sessionFiltered, interval, tz);
     const capped = agg.length > maxBars ? agg.slice(-maxBars) : agg;
     return { bars: capped, source: "aggregated" as const, fallback: false };
-  }, [historicalDaily, instrumentType, interval, intra, isDaily, session, tz, maxBars]);
+  }, [historicalDaily, interval, intra, isDaily, session, tz, maxBars]);
 
   const effectiveError = fallback ? null : error;
 
