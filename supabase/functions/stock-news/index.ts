@@ -48,7 +48,7 @@ const cacheKeyFor = (symbol?: string, limit?: number) => {
   return `${CACHE_PREFIX}:all:${limit || 10}`
 }
 
-const alpacaFetch = async (params: Record<string, any>) => {
+const alpacaFetch = async (params: Record<string, unknown>) => {
   const url = new URL('https://data.alpaca.markets/v1beta1/news');
   
   Object.entries(params).forEach(([key, value]) => {
