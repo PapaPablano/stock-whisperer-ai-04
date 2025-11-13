@@ -235,12 +235,25 @@ const Index = () => {
 
   const getIntervalMilliseconds = (interval: CandleInterval): number => {
     switch (interval) {
-      case '10m': return 10 * 60 * 1000;
-      case '1h': return 60 * 60 * 1000;
-      case '4h': return 4 * 60 * 60 * 1000;
-      case '1d': return 24 * 60 * 60 * 1000;
-      default: return 60 * 1000; // Default to 1 minute for safety
+      case "10m":
+        return 10 * 60 * 1000;
+      case "1h":
+        return 60 * 60 * 1000;
+      case "4h":
+        return 4 * 60 * 60 * 1000;
+      case "1d":
+        return 24 * 60 * 60 * 1000;
+      default:
+        return 60 * 1000; // Default to 1 minute for safety
     }
+  };
+
+  const alignTimeToInterval = (timestamp: number, intervalMs: number) => {
+    if (!Number.isFinite(intervalMs) || intervalMs <= 0) {
+      return new Date(timestamp);
+    }
+    const alignedTimestamp = timestamp - (timestamp % intervalMs);
+    return new Date(alignedTimestamp);
   };
 
   useEffect(() => {
@@ -264,9 +277,9 @@ const Index = () => {
       
       if (tradeTime >= lastBarTime + intervalMs) {
         // Create a new bar
-        const newBarStartTime = new Date(tradeTime - (tradeTime % intervalMs));
+        const alignedStartTime = alignTimeToInterval(tradeTime, intervalMs);
         const newBar: Bar = {
-          datetime: newBarStartTime.toISOString(),
+          datetime: alignedStartTime.toISOString(),
           open: lastTrade.price,
           high: lastTrade.price,
           low: lastTrade.price,
