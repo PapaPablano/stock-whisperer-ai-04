@@ -78,7 +78,7 @@ const Index = () => {
   const { data: liveQuote, isLoading: quoteLoading } = useStockQuote(selectedSymbol);
   const { toast } = useToast();
   const [liveChartData, setLiveChartData] = useState<Bar[]>([]);
-  const { latestTrade, isConnected: isStreamConnected } = useStockStream(selectedSymbol);
+  const { latestTrade, isConnected: isStreamConnected } = useStockStream({ symbols: [selectedSymbol], subscribeTrades: true });
 
 
   const intervalMap: Record<CandleInterval, Interval> = {
