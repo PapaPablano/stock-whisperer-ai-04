@@ -13,7 +13,7 @@ const getInitialLayouts = () => {
 };
 
 const getFromLS = (key: string) => {
-  let ls: any = {};
+  let ls: Record<string, unknown> = {};
   if (global.localStorage) {
     try {
       ls = JSON.parse(global.localStorage.getItem('rgl-8') || '{}');
@@ -24,7 +24,7 @@ const getFromLS = (key: string) => {
   return ls[key];
 };
 
-const saveToLS = (key: string, value: any) => {
+const saveToLS = (key: string, value: unknown) => {
   if (global.localStorage) {
     global.localStorage.setItem(
       'rgl-8',

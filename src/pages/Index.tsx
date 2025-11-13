@@ -21,6 +21,8 @@ import type { Interval } from "@/lib/aggregateBars";
 import { useUnifiedChartData } from "@/hooks/useUnifiedChartData";
 import { useStockTrades } from "@/hooks/useStockStream";
 import type { Bar } from "@/lib/aggregateBars";
+import { floorToBucket } from "@/lib/aggregateBars";
+import { SESSIONS } from "@/lib/marketSessions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { TIME_BUTTONS } from "@/lib/chartConfig";
@@ -79,6 +81,7 @@ const Index = () => {
   const { toast } = useToast();
   const [liveChartData, setLiveChartData] = useState<Bar[]>([]);
   const { lastTrade } = useStockTrades(selectedSymbol);
+  const { latestTrade } = useStockStream({ symbols: [selectedSymbol], subscribeTrades: true });
 
 
   const intervalMap: Record<CandleInterval, Interval> = {
@@ -243,6 +246,14 @@ const Index = () => {
     }
   };
 
+  const alignTimeToInterval = (timestamp: number, intervalMs: number): number => {
+    // Align timestamp to the start of the interval period
+    // This ensures proper alignment to interval boundaries (e.g., 10:00, 10:10, 10:20 for 10-minute intervals)
+    // Align timestamp to interval boundary
+    // For intraday intervals, align to the start of the interval period
+    return Math.floor(timestamp / intervalMs) * intervalMs;
+  };
+
   useEffect(() => {
     if (!lastTrade || candleInterval === '1d') {
       return;
@@ -263,8 +274,14 @@ const Index = () => {
       }
       
       if (tradeTime >= lastBarTime + intervalMs) {
-        // Create a new bar
-        const newBarStartTime = new Date(tradeTime - (tradeTime % intervalMs));
+        // Create a new bar with properly aligned start time
+        // Create a new bar with proper time alignment
+        const tradeISO = new Date(tradeTime).toISOString();
+        const alignedTime = floorToBucket(tradeISO, chartInterval, SESSIONS["EQUITY_RTH"].tz);
+        const newBar: Bar = {
+          datetime: alignedTime,
+        // Create a new bar aligned to interval boundary
+        const alignedStartTime = alignTimeToInterval(tradeTime, intervalMs);
         const newBar: Bar = {
           datetime: newBarStartTime.toISOString(),
           open: lastTrade.price,
@@ -284,12 +301,31 @@ const Index = () => {
           volume: lastBar.volume + lastTrade.size,
         };
         newBars[newBars.length - 1] = updatedBar;
+          datetime: new Date(alignedStartTime).toISOString(),
+          open: latestTrade.p,
+          high: latestTrade.p,
+          low: latestTrade.p,
+          close: latestTrade.p,
+          volume: latestTrade.s,
+        };
+        newBars.push(newBar);
+      } else {
+        // Update the last bar immutably
+        newBars[newBars.length - 1] = {
+          ...lastBar,
+          close: latestTrade.p,
+          high: Math.max(lastBar.high, latestTrade.p),
+          low: Math.min(lastBar.low, latestTrade.p),
+          volume: lastBar.volume + latestTrade.s,
+        };
       }
       
       return newBars;
     });
 
   }, [lastTrade, candleInterval]);
+  }, [latestTrade, candleInterval, liveChartData.length]);
+  }, [latestTrade, candleInterval, liveChartData]);
 
 
   useEffect(() => {
