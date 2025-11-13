@@ -355,15 +355,49 @@ const parseSchwabQuote = (symbol: string, payload: unknown): QuotePayload | null
     ? (entry.quote as Record<string, unknown>)
     : null
 
-  const lastPrice = toNullableNumber(entry.lastPrice ?? nestedQuote?.lastPrice ?? entry.last ?? nestedQuote?.last ?? entry.close ?? nestedQuote?.close)
-  const openPrice = toNullableNumber(entry.openPrice ?? nestedQuote?.openPrice ?? entry.open)
-  const highPrice = toNullableNumber(entry.highPrice ?? nestedQuote?.highPrice ?? entry.high)
-  const lowPrice = toNullableNumber(entry.lowPrice ?? nestedQuote?.lowPrice ?? entry.low)
-  const prevClose = toNullableNumber(entry.previousClose ?? nestedQuote?.previousClose ?? entry.prevClose ?? nestedQuote?.prevClose ?? entry.close)
-  const volume = toNullableNumber(entry.totalVolume ?? nestedQuote?.totalVolume ?? entry.volume)
-  const bidPrice = toNullableNumber(entry.bidPrice ?? nestedQuote?.bidPrice ?? entry.bid)
-  const askPrice = toNullableNumber(entry.askPrice ?? nestedQuote?.askPrice ?? entry.ask)
+  // Extract nestedQuote properties for readability
+  const nestedLastPrice = nestedQuote?.lastPrice
+  const nestedLast = nestedQuote?.last
+  const nestedClose = nestedQuote?.close
+  const nestedOpenPrice = nestedQuote?.openPrice
+  const nestedOpen = nestedQuote?.open
+  const nestedHighPrice = nestedQuote?.highPrice
+  const nestedHigh = nestedQuote?.high
+  const nestedLowPrice = nestedQuote?.lowPrice
+  const nestedLow = nestedQuote?.low
+  const nestedPreviousClose = nestedQuote?.previousClose
+  const nestedPrevClose = nestedQuote?.prevClose
+  const nestedTotalVolume = nestedQuote?.totalVolume
+  const nestedVolume = nestedQuote?.volume
+  const nestedBidPrice = nestedQuote?.bidPrice
+  const nestedBid = nestedQuote?.bid
+  const nestedAskPrice = nestedQuote?.askPrice
+  const nestedAsk = nestedQuote?.ask
 
+  const lastPrice = toNullableNumber(
+    entry.lastPrice ?? nestedLastPrice ?? entry.last ?? nestedLast ?? entry.close ?? nestedClose
+  )
+  const openPrice = toNullableNumber(
+    entry.openPrice ?? nestedOpenPrice ?? entry.open ?? nestedOpen
+  )
+  const highPrice = toNullableNumber(
+    entry.highPrice ?? nestedHighPrice ?? entry.high ?? nestedHigh
+  )
+  const lowPrice = toNullableNumber(
+    entry.lowPrice ?? nestedLowPrice ?? entry.low ?? nestedLow
+  )
+  const prevClose = toNullableNumber(
+    entry.previousClose ?? nestedPreviousClose ?? entry.prevClose ?? nestedPrevClose ?? entry.close
+  )
+  const volume = toNullableNumber(
+    entry.totalVolume ?? nestedTotalVolume ?? entry.volume ?? nestedVolume
+  )
+  const bidPrice = toNullableNumber(
+    entry.bidPrice ?? nestedBidPrice ?? entry.bid ?? nestedBid
+  )
+  const askPrice = toNullableNumber(
+    entry.askPrice ?? nestedAskPrice ?? entry.ask ?? nestedAsk
+  )
   const price = lastPrice ?? openPrice ?? prevClose ?? 0
   const change = prevClose != null ? price - prevClose : 0
   const changePercent = prevClose && prevClose !== 0 ? (change / prevClose) * 100 : 0
