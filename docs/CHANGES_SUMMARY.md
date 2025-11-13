@@ -12,7 +12,77 @@ The original request was to:
 
 ## Changes Made
 
-### 1. Environment Configuration Fixed ✅
+### 1. IntradayData API Breaking Change ⚠️
+
+**File**: `src/hooks/useStockIntraday.ts`
+
+**Breaking Change** (Commit: `17cf177`):
+The `IntradayData` interface has been updated to make all numeric fields nullable to handle incomplete or unavailable data from APIs.
+
+**Before**:
+```typescript
+export interface IntradayData {
+  datetime: string;
+  date: string;
+  time: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+```
+
+**After**:
+```typescript
+export interface IntradayData {
+  datetime: string;
+  date: string;
+  time: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+  volume: number | null;
+}
+```
+
+**Why This Change**:
+- Market data APIs may return incomplete data during pre-market/after-hours
+- Data gaps can occur during low-volume periods
+- API failures or partial responses need graceful handling
+- Improves resilience and prevents crashes from missing data
+
+**Migration Guide for Consumers**:
+```typescript
+// Before: Assumed non-null values
+const price = data.close;
+
+// After: Handle potential null values
+const price = data.close ?? 0; // with default
+// or
+if (data.close !== null) {
+  const price = data.close; // type-safe access
+}
+// or
+const validData = rawData.filter(d => d.close !== null);
+```
+
+**Documentation Added**:
+- Comprehensive JSDoc comments on the `IntradayData` interface
+- Inline comments explaining nullable behavior
+- Usage examples demonstrating null handling
+- This changelog entry
+
+**Impact**:
+- ✅ Improved data reliability and error handling
+- ✅ Better handling of incomplete API responses
+- ⚠️ Consumers must handle null values explicitly
+- ⚠️ Type checking will catch missing null checks
+
+---
+
+### 2. Environment Configuration Fixed ✅
 
 **File**: `.env`
 
@@ -36,7 +106,7 @@ The original request was to:
 
 ---
 
-### 2. Dashboard Layout Reorganized ✅
+### 3. Dashboard Layout Reorganized ✅
 
 **File**: `src/pages/Index.tsx`
 
@@ -93,7 +163,7 @@ return (
 
 ---
 
-### 3. Documentation Created ✅
+### 4. Documentation Created ✅
 
 Four comprehensive documentation files created:
 
