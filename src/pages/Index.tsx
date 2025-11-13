@@ -19,7 +19,7 @@ import {
 } from "@/lib/superTrendAI";
 import type { Interval } from "@/lib/aggregateBars";
 import { useUnifiedChartData } from "@/hooks/useUnifiedChartData";
-import { useStockStream } from "@/hooks/useStockStream";
+import { useStockTrades } from "@/hooks/useStockStream";
 import type { Bar } from "@/lib/aggregateBars";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -78,7 +78,7 @@ const Index = () => {
   const { data: liveQuote, isLoading: quoteLoading } = useStockQuote(selectedSymbol);
   const { toast } = useToast();
   const [liveChartData, setLiveChartData] = useState<Bar[]>([]);
-  const { latestTrade, isConnected: isStreamConnected } = useStockStream(selectedSymbol);
+  const { lastTrade } = useStockTrades(selectedSymbol);
 
 
   const intervalMap: Record<CandleInterval, Interval> = {
@@ -237,48 +237,59 @@ const Index = () => {
     switch (interval) {
       case '10m': return 10 * 60 * 1000;
       case '1h': return 60 * 60 * 1000;
-      case '4h': return 4 * 60 * 60 * 100;
+      case '4h': return 4 * 60 * 60 * 1000;
       case '1d': return 24 * 60 * 60 * 1000;
       default: return 60 * 1000; // Default to 1 minute for safety
     }
   };
 
   useEffect(() => {
-    if (!latestTrade || liveChartData.length === 0 || candleInterval === '1d') {
+    if (!lastTrade || candleInterval === '1d') {
       return;
     }
 
     setLiveChartData(currentBars => {
+      if (currentBars.length === 0) {
+        return currentBars;
+      }
       const newBars = [...currentBars];
       const lastBar = newBars[newBars.length - 1];
-      const tradeTime = new Date(latestTrade.t).getTime();
+      const tradeTime = new Date(lastTrade.timestamp).getTime();
       const lastBarTime = new Date(lastBar.datetime).getTime();
       const intervalMs = getIntervalMilliseconds(candleInterval);
+
+      if (Number.isNaN(tradeTime) || Number.isNaN(lastBarTime)) {
+        return currentBars;
+      }
       
       if (tradeTime >= lastBarTime + intervalMs) {
         // Create a new bar
         const newBarStartTime = new Date(tradeTime - (tradeTime % intervalMs));
         const newBar: Bar = {
           datetime: newBarStartTime.toISOString(),
-          open: latestTrade.p,
-          high: latestTrade.p,
-          low: latestTrade.p,
-          close: latestTrade.p,
-          volume: latestTrade.s,
+          open: lastTrade.price,
+          high: lastTrade.price,
+          low: lastTrade.price,
+          close: lastTrade.price,
+          volume: lastTrade.size,
         };
         newBars.push(newBar);
       } else {
         // Update the last bar
-        lastBar.close = latestTrade.p;
-        lastBar.high = Math.max(lastBar.high, latestTrade.p);
-        lastBar.low = Math.min(lastBar.low, latestTrade.p);
-        lastBar.volume += latestTrade.s;
+        const updatedBar: Bar = {
+          ...lastBar,
+          close: lastTrade.price,
+          high: Math.max(lastBar.high, lastTrade.price),
+          low: Math.min(lastBar.low, lastTrade.price),
+          volume: lastBar.volume + lastTrade.size,
+        };
+        newBars[newBars.length - 1] = updatedBar;
       }
       
       return newBars;
     });
 
-  }, [latestTrade, candleInterval]);
+  }, [lastTrade, candleInterval]);
 
 
   useEffect(() => {
