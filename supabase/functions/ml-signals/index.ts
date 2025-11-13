@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
-import { RSI } from 'technicalindicators';
+import { calculateRSI } from '../_shared/technicalIndicators.ts';
 
 const supabaseAdmin = createClient(
   Deno.env.get('SUPABASE_URL') ?? '',
@@ -91,9 +91,18 @@ Deno.serve(async (req) => {
       );
     }
 
-    const closePrices = bars.map(bar => bar.c);
-    const rsi = RSI.calculate({ period: 14, values: closePrices });
-    const latestRsi = rsi[rsi.length - 1];
+    const closePrices = bars.map((bar) => bar.c);
+    const rsiResult = calculateRSI(closePrices, 14);
+    
+    // Get the last valid RSI value from the array
+    const latestRsi = rsiResult.filter(r => r !== null).pop();
+
+    if (latestRsi === undefined) {
+      return new Response(
+        JSON.stringify({ error: 'Could not calculate RSI.' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+      );
+    }
 
     const signal = generateSignal(latestRsi);
 
