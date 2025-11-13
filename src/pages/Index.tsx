@@ -21,6 +21,8 @@ import type { Interval } from "@/lib/aggregateBars";
 import { useUnifiedChartData } from "@/hooks/useUnifiedChartData";
 import { useStockStream } from "@/hooks/useStockStream";
 import type { Bar } from "@/lib/aggregateBars";
+import { floorToBucket } from "@/lib/aggregateBars";
+import { SESSIONS } from "@/lib/marketSessions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { TIME_BUTTONS } from "@/lib/chartConfig";
@@ -262,6 +264,11 @@ const Index = () => {
       const intervalMs = getIntervalMilliseconds(candleInterval);
       
       if (tradeTime >= lastBarTime + intervalMs) {
+        // Create a new bar with proper time alignment
+        const tradeISO = new Date(tradeTime).toISOString();
+        const alignedTime = floorToBucket(tradeISO, chartInterval, SESSIONS["EQUITY_RTH"].tz);
+        const newBar: Bar = {
+          datetime: alignedTime,
         // Create a new bar aligned to interval boundary
         const alignedStartTime = alignTimeToInterval(tradeTime, intervalMs);
         const newBar: Bar = {
