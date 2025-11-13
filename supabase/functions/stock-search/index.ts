@@ -73,6 +73,7 @@ const searchAlpacaAssets = async (query: string): Promise<SearchResult[]> => {
 
   for (const { assetClass, instrumentType } of SUPPORTED_ASSET_CLASSES) {
     // Break early if we already have enough results
+    // Check if we already have enough results before fetching more assets
     if (results.size >= MAX_RESULTS) {
       break
     }
