@@ -246,6 +246,8 @@ const Index = () => {
   };
 
   const alignTimeToInterval = (timestamp: number, intervalMs: number): number => {
+    // Align timestamp to the start of the interval period
+    // This ensures proper alignment to interval boundaries (e.g., 10:00, 10:10, 10:20 for 10-minute intervals)
     // Align timestamp to interval boundary
     // For intraday intervals, align to the start of the interval period
     return Math.floor(timestamp / intervalMs) * intervalMs;
@@ -264,6 +266,7 @@ const Index = () => {
       const intervalMs = getIntervalMilliseconds(candleInterval);
       
       if (tradeTime >= lastBarTime + intervalMs) {
+        // Create a new bar with properly aligned start time
         // Create a new bar with proper time alignment
         const tradeISO = new Date(tradeTime).toISOString();
         const alignedTime = floorToBucket(tradeISO, chartInterval, SESSIONS["EQUITY_RTH"].tz);
@@ -294,6 +297,7 @@ const Index = () => {
       return newBars;
     });
 
+  }, [latestTrade, candleInterval, liveChartData.length]);
   }, [latestTrade, candleInterval, liveChartData]);
 
 
