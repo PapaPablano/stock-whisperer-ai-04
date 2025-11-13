@@ -19,7 +19,7 @@ import {
 } from "@/lib/superTrendAI";
 import type { Interval } from "@/lib/aggregateBars";
 import { useUnifiedChartData } from "@/hooks/useUnifiedChartData";
-import { useStockStream } from "@/hooks/useStockStream";
+import { useStockTrades } from "@/hooks/useStockStream";
 import type { Bar } from "@/lib/aggregateBars";
 import { floorToBucket } from "@/lib/aggregateBars";
 import { SESSIONS } from "@/lib/marketSessions";
@@ -80,6 +80,7 @@ const Index = () => {
   const { data: liveQuote, isLoading: quoteLoading } = useStockQuote(selectedSymbol);
   const { toast } = useToast();
   const [liveChartData, setLiveChartData] = useState<Bar[]>([]);
+  const { lastTrade } = useStockTrades(selectedSymbol);
   const { latestTrade } = useStockStream({ symbols: [selectedSymbol], subscribeTrades: true });
 
 
@@ -254,16 +255,23 @@ const Index = () => {
   };
 
   useEffect(() => {
-    if (!latestTrade || liveChartData.length === 0 || candleInterval === '1d') {
+    if (!lastTrade || candleInterval === '1d') {
       return;
     }
 
     setLiveChartData(currentBars => {
+      if (currentBars.length === 0) {
+        return currentBars;
+      }
       const newBars = [...currentBars];
       const lastBar = newBars[newBars.length - 1];
-      const tradeTime = new Date(latestTrade.t).getTime();
+      const tradeTime = new Date(lastTrade.timestamp).getTime();
       const lastBarTime = new Date(lastBar.datetime).getTime();
       const intervalMs = getIntervalMilliseconds(candleInterval);
+
+      if (Number.isNaN(tradeTime) || Number.isNaN(lastBarTime)) {
+        return currentBars;
+      }
       
       if (tradeTime >= lastBarTime + intervalMs) {
         // Create a new bar with properly aligned start time
@@ -275,6 +283,24 @@ const Index = () => {
         // Create a new bar aligned to interval boundary
         const alignedStartTime = alignTimeToInterval(tradeTime, intervalMs);
         const newBar: Bar = {
+          datetime: newBarStartTime.toISOString(),
+          open: lastTrade.price,
+          high: lastTrade.price,
+          low: lastTrade.price,
+          close: lastTrade.price,
+          volume: lastTrade.size,
+        };
+        newBars.push(newBar);
+      } else {
+        // Update the last bar
+        const updatedBar: Bar = {
+          ...lastBar,
+          close: lastTrade.price,
+          high: Math.max(lastBar.high, lastTrade.price),
+          low: Math.min(lastBar.low, lastTrade.price),
+          volume: lastBar.volume + lastTrade.size,
+        };
+        newBars[newBars.length - 1] = updatedBar;
           datetime: new Date(alignedStartTime).toISOString(),
           open: latestTrade.p,
           high: latestTrade.p,
@@ -297,6 +323,7 @@ const Index = () => {
       return newBars;
     });
 
+  }, [lastTrade, candleInterval]);
   }, [latestTrade, candleInterval, liveChartData.length]);
   }, [latestTrade, candleInterval, liveChartData]);
 
